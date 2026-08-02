@@ -8,6 +8,7 @@
 --   receipts/{branch_id}/{order_id}-{timestamp}.jpg
 --   payment-proofs/{customer_user_id}/{timestamp}.jpg
 
+drop policy if exists "receipts_insert_dispatcher" on storage.objects;
 create policy "receipts_insert_dispatcher"
   on storage.objects for insert
   to authenticated
@@ -17,6 +18,7 @@ create policy "receipts_insert_dispatcher"
     and (storage.foldername(name))[1] = current_user_branch_id()::text
   );
 
+drop policy if exists "receipts_select_scoped" on storage.objects;
 create policy "receipts_select_scoped"
   on storage.objects for select
   to authenticated
@@ -35,6 +37,7 @@ create policy "receipts_select_scoped"
     )
   );
 
+drop policy if exists "payment_proofs_insert_owner_or_staff" on storage.objects;
 create policy "payment_proofs_insert_owner_or_staff"
   on storage.objects for insert
   to authenticated
@@ -46,6 +49,7 @@ create policy "payment_proofs_insert_owner_or_staff"
     )
   );
 
+drop policy if exists "payment_proofs_select_owner_or_staff" on storage.objects;
 create policy "payment_proofs_select_owner_or_staff"
   on storage.objects for select
   to authenticated

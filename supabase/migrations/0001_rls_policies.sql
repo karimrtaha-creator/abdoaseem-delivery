@@ -25,6 +25,12 @@
 --   - Grants are explicit: a brand-new Supabase project gives `anon` and
 --     `authenticated` zero table privileges until granted, independent of
 --     RLS. Both layers are required together.
+--   - Every CREATE POLICY is preceded by a matching DROP POLICY IF EXISTS,
+--     so this file (and 0003_storage_policies.sql) can be re-run safely -
+--     ALTER TABLE...ENABLE RLS, CREATE OR REPLACE FUNCTION and GRANT are
+--     already idempotent on their own. This file never creates types,
+--     tables, or seed rows - that schema/data already existed before this
+--     migration was written, nothing here touches it.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -62,11 +68,13 @@ $$;
 grant select on public.regions to authenticated;
 grant insert, update, delete on public.regions to authenticated; -- narrowed by policy
 
+drop policy if exists "regions_select_authenticated" on public.regions;
 create policy "regions_select_authenticated"
   on public.regions for select
   to authenticated
   using (true);
 
+drop policy if exists "regions_write_general_manager" on public.regions;
 create policy "regions_write_general_manager"
   on public.regions for all
   to authenticated
@@ -79,11 +87,13 @@ create policy "regions_write_general_manager"
 grant select on public.branches to anon, authenticated;
 grant insert, update, delete on public.branches to authenticated; -- narrowed by policy
 
+drop policy if exists "branches_select_public" on public.branches;
 create policy "branches_select_public"
   on public.branches for select
   to anon, authenticated
   using (true);
 
+drop policy if exists "branches_write_general_manager" on public.branches;
 create policy "branches_write_general_manager"
   on public.branches for all
   to authenticated
@@ -97,16 +107,19 @@ grant select, update on public.users to authenticated; -- insert happens via
                                                           -- auth.admin (service_role),
                                                           -- not client INSERT
 
+drop policy if exists "users_select_self" on public.users;
 create policy "users_select_self"
   on public.users for select
   to authenticated
   using (id = auth.uid());
 
+drop policy if exists "users_select_general_manager_team_leader" on public.users;
 create policy "users_select_general_manager_team_leader"
   on public.users for select
   to authenticated
   using (current_user_role()::text in ('general_manager', 'team_leader'));
 
+drop policy if exists "users_select_regional_manager" on public.users;
 create policy "users_select_regional_manager"
   on public.users for select
   to authenticated
@@ -115,6 +128,7 @@ create policy "users_select_regional_manager"
     and branch_id in (select public.current_user_region_branch_ids())
   );
 
+drop policy if exists "users_select_branch_manager" on public.users;
 create policy "users_select_branch_manager"
   on public.users for select
   to authenticated
@@ -126,6 +140,7 @@ create policy "users_select_branch_manager"
 -- Dispatcher needs to see their branch's drivers to populate the "select
 -- driver" picker in the exit-confirmation screen (section 6). Scoped to
 -- driver rows only, not the whole branch roster.
+drop policy if exists "users_select_dispatcher_branch_drivers" on public.users;
 create policy "users_select_dispatcher_branch_drivers"
   on public.users for select
   to authenticated
@@ -137,18 +152,21 @@ create policy "users_select_dispatcher_branch_drivers"
 
 -- Self profile edits (name only, in practice) - role/branch_id/region_id/
 -- is_active changes are blocked for non-managers by the trigger below.
+drop policy if exists "users_update_self" on public.users;
 create policy "users_update_self"
   on public.users for update
   to authenticated
   using (id = auth.uid())
   with check (id = auth.uid());
 
+drop policy if exists "users_update_general_manager" on public.users;
 create policy "users_update_general_manager"
   on public.users for update
   to authenticated
   using (current_user_role()::text = 'general_manager')
   with check (current_user_role()::text = 'general_manager');
 
+drop policy if exists "users_update_regional_manager" on public.users;
 create policy "users_update_regional_manager"
   on public.users for update
   to authenticated
@@ -162,6 +180,7 @@ create policy "users_update_regional_manager"
     and role not in ('general_manager', 'regional_manager', 'team_leader')
   );
 
+drop policy if exists "users_update_branch_manager" on public.users;
 create policy "users_update_branch_manager"
   on public.users for update
   to authenticated
@@ -205,11 +224,13 @@ create trigger trg_prevent_self_privilege_escalation
 -- ============================================================================
 grant select, insert, update on public.customers_profile to authenticated;
 
+drop policy if exists "customers_profile_select_self" on public.customers_profile;
 create policy "customers_profile_select_self"
   on public.customers_profile for select
   to authenticated
   using (user_id = auth.uid());
 
+drop policy if exists "customers_profile_select_staff" on public.customers_profile;
 create policy "customers_profile_select_staff"
   on public.customers_profile for select
   to authenticated
@@ -219,17 +240,20 @@ create policy "customers_profile_select_staff"
     or (current_user_role()::text = 'branch_manager' and nearest_branch_id = current_user_branch_id())
   );
 
+drop policy if exists "customers_profile_upsert_self" on public.customers_profile;
 create policy "customers_profile_upsert_self"
   on public.customers_profile for insert
   to authenticated
   with check (user_id = auth.uid());
 
+drop policy if exists "customers_profile_update_self" on public.customers_profile;
 create policy "customers_profile_update_self"
   on public.customers_profile for update
   to authenticated
   using (user_id = auth.uid())
   with check (user_id = auth.uid());
 
+drop policy if exists "customers_profile_write_call_center" on public.customers_profile;
 create policy "customers_profile_write_call_center"
   on public.customers_profile for all
   to authenticated
@@ -242,20 +266,26 @@ create policy "customers_profile_write_call_center"
 grant select on public.menu_categories, public.menu_items, public.combo_offers to anon, authenticated;
 grant insert, update, delete on public.menu_categories, public.menu_items, public.combo_offers to authenticated; -- narrowed by policy
 
+drop policy if exists "menu_categories_select_public" on public.menu_categories;
 create policy "menu_categories_select_public" on public.menu_categories for select to anon, authenticated using (true);
+drop policy if exists "menu_items_select_public" on public.menu_items;
 create policy "menu_items_select_public"      on public.menu_items      for select to anon, authenticated using (true);
+drop policy if exists "combo_offers_select_public" on public.combo_offers;
 create policy "combo_offers_select_public"    on public.combo_offers    for select to anon, authenticated using (true);
 
+drop policy if exists "menu_categories_write_general_manager" on public.menu_categories;
 create policy "menu_categories_write_general_manager"
   on public.menu_categories for all to authenticated
   using (current_user_role()::text = 'general_manager')
   with check (current_user_role()::text = 'general_manager');
 
+drop policy if exists "menu_items_write_general_manager" on public.menu_items;
 create policy "menu_items_write_general_manager"
   on public.menu_items for all to authenticated
   using (current_user_role()::text = 'general_manager')
   with check (current_user_role()::text = 'general_manager');
 
+drop policy if exists "combo_offers_write_general_manager" on public.combo_offers;
 create policy "combo_offers_write_general_manager"
   on public.combo_offers for all to authenticated
   using (current_user_role()::text = 'general_manager')
@@ -267,9 +297,11 @@ create policy "combo_offers_write_general_manager"
 grant select on public.sla_tiers to authenticated;
 grant insert, update, delete on public.sla_tiers to authenticated; -- narrowed by policy
 
+drop policy if exists "sla_tiers_select_authenticated" on public.sla_tiers;
 create policy "sla_tiers_select_authenticated"
   on public.sla_tiers for select to authenticated using (true);
 
+drop policy if exists "sla_tiers_write_general_manager" on public.sla_tiers;
 create policy "sla_tiers_write_general_manager"
   on public.sla_tiers for all to authenticated
   using (current_user_role()::text = 'general_manager')
@@ -282,10 +314,12 @@ create policy "sla_tiers_write_general_manager"
 -- ============================================================================
 grant select, insert on public.orders to authenticated;
 
+drop policy if exists "orders_select_general_manager_team_leader" on public.orders;
 create policy "orders_select_general_manager_team_leader"
   on public.orders for select to authenticated
   using (current_user_role()::text in ('general_manager', 'team_leader'));
 
+drop policy if exists "orders_select_regional_manager" on public.orders;
 create policy "orders_select_regional_manager"
   on public.orders for select to authenticated
   using (
@@ -293,6 +327,7 @@ create policy "orders_select_regional_manager"
     and branch_id in (select public.current_user_region_branch_ids())
   );
 
+drop policy if exists "orders_select_branch_manager" on public.orders;
 create policy "orders_select_branch_manager"
   on public.orders for select to authenticated
   using (
@@ -300,6 +335,7 @@ create policy "orders_select_branch_manager"
     and branch_id = current_user_branch_id()
   );
 
+drop policy if exists "orders_select_dispatcher" on public.orders;
 create policy "orders_select_dispatcher"
   on public.orders for select to authenticated
   using (
@@ -307,6 +343,7 @@ create policy "orders_select_dispatcher"
     and branch_id = current_user_branch_id()
   );
 
+drop policy if exists "orders_select_call_center" on public.orders;
 create policy "orders_select_call_center"
   on public.orders for select to authenticated
   using (
@@ -314,6 +351,7 @@ create policy "orders_select_call_center"
     and order_source = 'call_center'
   );
 
+drop policy if exists "orders_select_driver" on public.orders;
 create policy "orders_select_driver"
   on public.orders for select to authenticated
   using (
@@ -321,6 +359,7 @@ create policy "orders_select_driver"
     and driver_id = auth.uid()
   );
 
+drop policy if exists "orders_select_customer" on public.orders;
 create policy "orders_select_customer"
   on public.orders for select to authenticated
   using (
@@ -329,6 +368,7 @@ create policy "orders_select_customer"
   );
 
 -- Customer places their own order directly from the customer app.
+drop policy if exists "orders_insert_customer" on public.orders;
 create policy "orders_insert_customer"
   on public.orders for insert to authenticated
   with check (
@@ -342,6 +382,7 @@ create policy "orders_insert_customer"
 -- customer's behalf (phone order). POS-origin rows ('pos' source) are only
 -- ever inserted by the POS integration using the service_role key, which
 -- bypasses RLS entirely - client roles cannot claim order_source = 'pos'.
+drop policy if exists "orders_insert_call_center" on public.orders;
 create policy "orders_insert_call_center"
   on public.orders for insert to authenticated
   with check (
@@ -355,12 +396,14 @@ create policy "orders_insert_call_center"
 -- ============================================================================
 grant select, insert on public.order_items to authenticated;
 
+drop policy if exists "order_items_select_via_order" on public.order_items;
 create policy "order_items_select_via_order"
   on public.order_items for select to authenticated
   using (exists (select 1 from public.orders o where o.id = order_items.order_id));
   -- orders RLS already restricts which rows the exists-subquery can see,
   -- so this effectively inherits the parent order's visibility.
 
+drop policy if exists "order_items_insert_via_order" on public.order_items;
 create policy "order_items_insert_via_order"
   on public.order_items for insert to authenticated
   with check (exists (select 1 from public.orders o where o.id = order_items.order_id));
@@ -379,10 +422,12 @@ create policy "order_items_insert_via_order"
 -- ============================================================================
 grant select, insert, update on public.complaints to authenticated;
 
+drop policy if exists "complaints_select_general_manager_team_leader" on public.complaints;
 create policy "complaints_select_general_manager_team_leader"
   on public.complaints for select to authenticated
   using (current_user_role()::text in ('general_manager', 'team_leader'));
 
+drop policy if exists "complaints_select_regional_manager" on public.complaints;
 create policy "complaints_select_regional_manager"
   on public.complaints for select to authenticated
   using (
@@ -390,6 +435,7 @@ create policy "complaints_select_regional_manager"
     and branch_id in (select public.current_user_region_branch_ids())
   );
 
+drop policy if exists "complaints_select_branch_manager" on public.complaints;
 create policy "complaints_select_branch_manager"
   on public.complaints for select to authenticated
   using (
@@ -397,6 +443,7 @@ create policy "complaints_select_branch_manager"
     and branch_id = current_user_branch_id()
   );
 
+drop policy if exists "complaints_select_customer" on public.complaints;
 create policy "complaints_select_customer"
   on public.complaints for select to authenticated
   using (
@@ -404,6 +451,7 @@ create policy "complaints_select_customer"
     and exists (select 1 from public.orders o where o.id = complaints.order_id and o.customer_id = auth.uid())
   );
 
+drop policy if exists "complaints_insert_staff" on public.complaints;
 create policy "complaints_insert_staff"
   on public.complaints for insert to authenticated
   with check (
@@ -425,6 +473,7 @@ create policy "complaints_insert_staff"
     )
   );
 
+drop policy if exists "complaints_insert_customer" on public.complaints;
 create policy "complaints_insert_customer"
   on public.complaints for insert to authenticated
   with check (
@@ -434,6 +483,7 @@ create policy "complaints_insert_customer"
 
 -- Driver app exception buttons (section 5): "customer not found" / OTP
 -- lockout both log a complaint against the driver's own assigned order.
+drop policy if exists "complaints_insert_driver" on public.complaints;
 create policy "complaints_insert_driver"
   on public.complaints for insert to authenticated
   with check (
@@ -441,16 +491,19 @@ create policy "complaints_insert_driver"
     and exists (select 1 from public.orders o where o.id = complaints.order_id and o.driver_id = auth.uid())
   );
 
+drop policy if exists "complaints_update_general_manager_team_leader" on public.complaints;
 create policy "complaints_update_general_manager_team_leader"
   on public.complaints for update to authenticated
   using (current_user_role()::text in ('general_manager', 'team_leader'))
   with check (current_user_role()::text in ('general_manager', 'team_leader'));
 
+drop policy if exists "complaints_update_regional_manager" on public.complaints;
 create policy "complaints_update_regional_manager"
   on public.complaints for update to authenticated
   using (current_user_role()::text = 'regional_manager' and branch_id in (select public.current_user_region_branch_ids()))
   with check (current_user_role()::text = 'regional_manager' and branch_id in (select public.current_user_region_branch_ids()));
 
+drop policy if exists "complaints_update_branch_manager" on public.complaints;
 create policy "complaints_update_branch_manager"
   on public.complaints for update to authenticated
   using (current_user_role()::text = 'branch_manager' and branch_id = current_user_branch_id())
