@@ -1,0 +1,28 @@
+-- OPTIONAL. Renamed with a non-.sql extension on purpose so the Supabase
+-- CLI does NOT run it automatically - it requires values only you have
+-- (the project's anon key, and the pg_cron/pg_net extensions enabled).
+-- To use: fill in the two placeholders below, rename to a .sql file with
+-- a timestamp/order after 0002_, and apply it like the other migrations.
+--
+-- Schedules check-sla-breaches to run every minute via pg_cron + pg_net,
+-- calling the deployed edge function over HTTPS with the anon key (the
+-- function itself only ever uses the service_role key internally, so the
+-- anon key here is just to pass Supabase's edge gateway auth check).
+
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
+select cron.schedule(
+  'check-sla-breaches-every-minute',
+  '* * * * *',
+  $$
+  select net.http_post(
+    url := 'https://<YOUR_PROJECT_REF>.supabase.co/functions/v1/check-sla-breaches',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer <YOUR_ANON_KEY>'
+    ),
+    body := '{}'::jsonb
+  );
+  $$
+);

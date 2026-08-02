@@ -1,0 +1,32 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+class DriverProfile {
+  final String id;
+  final String name;
+  final String role;
+  final bool isActive;
+
+  DriverProfile({required this.id, required this.name, required this.role, required this.isActive});
+
+  factory DriverProfile.fromMap(Map<String, dynamic> map) => DriverProfile(
+        id: map['id'] as String,
+        name: map['name'] as String? ?? '',
+        role: map['role'] as String? ?? '',
+        isActive: map['is_active'] as bool? ?? false,
+      );
+}
+
+class ProfileService {
+  final SupabaseClient _client = Supabase.instance.client;
+
+  Future<DriverProfile?> fetchOwnProfile() async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) return null;
+    final row = await _client
+        .from('users')
+        .select('id, name, role, is_active')
+        .eq('id', uid)
+        .maybeSingle();
+    return row == null ? null : DriverProfile.fromMap(row);
+  }
+}
