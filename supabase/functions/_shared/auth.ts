@@ -45,7 +45,10 @@ export async function getCaller(req: Request): Promise<CallerProfile | null> {
   });
 
   const { data: userData, error: userError } = await userClient.auth.getUser();
-  if (userError || !userData?.user) return null;
+  if (userError || !userData?.user) {
+    if (userError) console.error("getCaller: auth.getUser() failed:", userError.message);
+    return null;
+  }
 
   const admin = getAdminClient();
   const { data: profile, error: profileError } = await admin
@@ -54,6 +57,20 @@ export async function getCaller(req: Request): Promise<CallerProfile | null> {
     .eq("id", userData.user.id)
     .single();
 
-  if (profileError || !profile) return null;
+  if (profileError || !profile) {
+    // Logged distinctly from "no session" above: a valid, authenticated
+    // caller with no matching profile row is usually either a missing
+    // service_role grant (see 0004_service_role_grants.sql) or a real
+    // orphaned auth user with no public.users row - both look identical
+    // to the client (401 "unauthorized"), so the function logs are the
+    // only place this distinction is visible.
+    if (profileError) {
+      console.error(
+        `getCaller: profile lookup failed for auth user ${userData.user.id}:`,
+        profileError.message,
+      );
+    }
+    return null;
+  }
   return profile as CallerProfile;
 }
