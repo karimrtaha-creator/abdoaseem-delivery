@@ -35,3 +35,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+
+# Local test scripts and backups
+*.ps1
+backup-*.sql
