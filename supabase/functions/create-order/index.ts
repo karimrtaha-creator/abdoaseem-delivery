@@ -74,9 +74,19 @@ Deno.serve(async (req) => {
   if (branchError || !branch) return errorResponse("branch not found", 404);
   if (!branch.is_delivery_available) return errorResponse("this branch does not offer delivery", 422);
 
-  // Find or create the customer. A row created here has no matching
-  // auth.users account (guest/phone-only customer, section 6: "لو عميل
-  // جديد يدخل اسمه وعنوانه في نفس الشاشة") - it just never gets a login.
+  // Find or create the customer. public.users.id is a foreign key into
+  // auth.users(id) (confirmed live: inserting a bare random uuid fails with
+  // "violates foreign key constraint users_id_fkey"), so a brand-new guest
+  // customer needs a real auth user created first via the admin API - a
+  // synthetic email (same idea as staff logins, different domain so a
+  // phone number can never collide between the two) and a random password
+  // they don't know. They can't log in with it today; that's fine, nothing
+  // here promises them a login, only an order record. This project also
+  // has an existing auth.users -> public.users trigger (observed when the
+  // call_center test account was created) that auto-inserts a blank
+  // public.users row the moment the auth user exists, defaulted to
+  // role='customer' - so the row already exists by the time we get here
+  // and must be UPDATEd, not INSERTed.
   let customerId: string;
   const { data: existingCustomer, error: findError } = await admin
     .from("users")
@@ -95,15 +105,36 @@ Deno.serve(async (req) => {
         .eq("user_id", customerId);
     }
   } else {
-    customerId = crypto.randomUUID();
-    const { error: createUserError } = await admin.from("users").insert({
-      id: customerId,
+    const guestEmail = `${customerPhone.replace(/\D/g, "")}@guest.abdoaseem.internal`;
+    const { data: authUser, error: authError } = await admin.auth.admin.createUser({
+      email: guestEmail,
+      password: crypto.randomUUID(),
+      email_confirm: true,
+    });
+    if (authError || !authUser?.user) {
+      return errorResponse(`failed to create customer account: ${authError?.message}`, 500);
+    }
+    customerId = authUser.user.id;
+
+    // Defensive: normally an existing auth->public.users trigger already
+    // created a blank row by this point (UPDATE is the right call), but
+    // don't assume it - fall back to INSERT if nothing was there to update.
+    const profileFields = {
       name: body.customer_name ?? "",
       phone: customerPhone,
       role: "customer",
       is_active: true,
-    });
-    if (createUserError) return errorResponse(createUserError.message, 500);
+    };
+    const { data: updatedRows, error: updateUserError } = await admin
+      .from("users")
+      .update(profileFields)
+      .eq("id", customerId)
+      .select("id");
+    if (updateUserError) return errorResponse(updateUserError.message, 500);
+    if (!updatedRows || updatedRows.length === 0) {
+      const { error: insertUserError } = await admin.from("users").insert({ id: customerId, ...profileFields });
+      if (insertUserError) return errorResponse(insertUserError.message, 500);
+    }
 
     const { error: createProfileError } = await admin.from("customers_profile").insert({
       user_id: customerId,
