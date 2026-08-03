@@ -4,6 +4,15 @@ import { supabase } from "./supabaseClient";
 import { useProfile } from "./lib/useProfile";
 import { Login } from "./pages/Login";
 import { Dispatch } from "./pages/Dispatch";
+import { CallCenter } from "./pages/CallCenter";
+import { AcceptanceLobby } from "./pages/AcceptanceLobby";
+
+const ROLE_TITLES: Record<string, string> = {
+  dispatcher: "ديسباتشر",
+  call_center: "كول سنتر",
+  team_leader: "قبول الأوردرات - تيم ليدر",
+  general_manager: "قبول الأوردرات - مدير عام",
+};
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -41,12 +50,13 @@ export default function App() {
     );
   }
 
-  if (profile.role !== "dispatcher") {
+  const roleTitle = ROLE_TITLES[profile.role];
+  if (!roleTitle) {
     return (
       <div className="centered-page">
         <div className="card">
           <p className="error-text">
-            الشاشة دي مخصصة لموظف الديسباتشر فقط. الدور الحالي: {profile.role}
+            الشاشة دي مش متاحة للدور ده. الدور الحالي: {profile.role}
           </p>
           <button className="btn-link" onClick={() => supabase.auth.signOut()}>
             تسجيل خروج
@@ -59,13 +69,17 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <h1>ديسباتشر - {profile.name}</h1>
+        <h1>
+          {roleTitle} - {profile.name}
+        </h1>
         <button className="btn-link" onClick={() => supabase.auth.signOut()}>
           تسجيل خروج
         </button>
       </header>
       <main>
-        <Dispatch profile={profile} />
+        {profile.role === "dispatcher" && <Dispatch profile={profile} />}
+        {profile.role === "call_center" && <CallCenter />}
+        {(profile.role === "team_leader" || profile.role === "general_manager") && <AcceptanceLobby />}
       </main>
     </div>
   );

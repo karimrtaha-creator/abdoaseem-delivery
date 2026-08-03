@@ -23,7 +23,7 @@ export function Login() {
   return (
     <div className="centered-page">
       <form className="card login-card" onSubmit={handleSubmit}>
-        <h1>تسجيل دخول الديسباتشر</h1>
+        <h1>تسجيل دخول الموظفين</h1>
         <label>
           رقم التليفون
           <input

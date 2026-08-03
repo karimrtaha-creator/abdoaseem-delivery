@@ -134,3 +134,76 @@ input:focus, select:focus { outline: 2px solid var(--primary); }
   0%, 100% { box-shadow: 0 0 0 2px rgba(30, 107, 82, 0.25); }
   50% { box-shadow: 0 0 0 6px rgba(30, 107, 82, 0.12); }
 }
+
+/* Call center + acceptance lobby */
+.inline-row { display: flex; gap: 8px; margin-bottom: 14px; }
+.inline-row input { flex: 1; }
+.inline-row .btn-primary { padding: 0 18px; border-radius: 8px; }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+
+.menu-category { margin-bottom: 18px; }
+.menu-category h3 { font-size: 1rem; margin: 0 0 8px; }
+.menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+
+.menu-item-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  text-align: right;
+  font-size: 0.9rem;
+}
+.menu-item-btn:hover { border-color: var(--primary); }
+
+.cart-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.95rem;
+}
+.cart-qty { display: flex; align-items: center; gap: 8px; }
+.cart-qty button {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+}
+.cart-total { text-align: left; font-weight: 700; margin-top: 10px; }
+
+.radio-label { flex-direction: row; align-items: center; gap: 8px; font-size: 1rem; color: var(--text); }
+.radio-label input { width: auto; }
+
+.btn-danger {
+  background: none;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: 8px;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.btn-danger:hover { background: #fdecea; }
+.btn-danger:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.branch-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.branch-stat-pill {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.85rem;
+}
+
+.pending-order-card { padding: 16px; }
+.pending-order-header { display: flex; justify-content: space-between; margin-bottom: 4px; }
+.payment-proof-img { max-width: 220px; border-radius: 8px; margin: 8px 0; display: block; }
