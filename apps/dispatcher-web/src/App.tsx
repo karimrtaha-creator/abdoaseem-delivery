@@ -7,8 +7,11 @@ import { Dispatch } from "./pages/Dispatch";
 import { CallCenter } from "./pages/CallCenter";
 import { AcceptanceLobby } from "./pages/AcceptanceLobby";
 import { UserManagement } from "./pages/UserManagement";
+import { Dashboard } from "./pages/Dashboard";
+import { DriverPerformance } from "./pages/DriverPerformance";
+import { Complaints } from "./pages/Complaints";
 
-type TabKey = "dispatch" | "call_center" | "acceptance" | "users";
+type TabKey = "dispatch" | "call_center" | "acceptance" | "users" | "dashboard" | "performance" | "complaints";
 
 const ROLE_TITLES: Record<string, string> = {
   dispatcher: "ديسباتشر",
@@ -27,11 +30,24 @@ const TABS_BY_ROLE: Record<string, { key: TabKey; label: string }[]> = {
   call_center: [{ key: "call_center", label: "أوردر جديد" }],
   team_leader: [{ key: "acceptance", label: "قبول الأوردرات" }],
   general_manager: [
+    { key: "dashboard", label: "لوحة المتابعة" },
     { key: "acceptance", label: "قبول الأوردرات" },
+    { key: "performance", label: "أداء الطيارين" },
+    { key: "complaints", label: "الشكاوى" },
     { key: "users", label: "إدارة المستخدمين" },
   ],
-  regional_manager: [{ key: "users", label: "إدارة المستخدمين" }],
-  branch_manager: [{ key: "users", label: "إدارة المستخدمين" }],
+  regional_manager: [
+    { key: "dashboard", label: "لوحة المتابعة" },
+    { key: "performance", label: "أداء الطيارين" },
+    { key: "complaints", label: "الشكاوى" },
+    { key: "users", label: "إدارة المستخدمين" },
+  ],
+  branch_manager: [
+    { key: "dashboard", label: "لوحة المتابعة" },
+    { key: "performance", label: "أداء الطيارين" },
+    { key: "complaints", label: "الشكاوى" },
+    { key: "users", label: "إدارة المستخدمين" },
+  ],
 };
 
 function ScreenFor({ tab, profile }: { tab: TabKey; profile: Profile }) {
@@ -44,6 +60,12 @@ function ScreenFor({ tab, profile }: { tab: TabKey; profile: Profile }) {
       return <AcceptanceLobby />;
     case "users":
       return <UserManagement profile={profile} />;
+    case "dashboard":
+      return <Dashboard profile={profile} />;
+    case "performance":
+      return <DriverPerformance profile={profile} />;
+    case "complaints":
+      return <Complaints />;
   }
 }
 
