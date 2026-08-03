@@ -89,6 +89,11 @@ Deno.serve(async (req) => {
 
   const sendResult = await sendOtpToCustomer(order.customer_phone, code, order_id);
 
+  // The dispatcher has no legitimate reason to see the delivery code - it
+  // exists to verify the driver actually reached the customer, so it never
+  // appears in this response or in apps/dispatcher-web under any
+  // circumstance. To view it, use get-delivery-otp from the customer's own
+  // order-tracking screen, or from the call_center screen for guest orders.
   return jsonResponse({
     order_id,
     status: "out_for_delivery",
@@ -96,8 +101,5 @@ Deno.serve(async (req) => {
     prep_time_minutes: prepTimeMinutes,
     sla_minutes: slaMinutes,
     otp_channel: sendResult.channel,
-    // Only present when no real SMS/WhatsApp provider is configured -
-    // lets QA complete the flow without a live SMS integration.
-    otp_code_debug: sendResult.channel === "none" ? code : undefined,
   });
 });

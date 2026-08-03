@@ -107,4 +107,30 @@ input:focus, select:focus { outline: 2px solid var(--primary); }
   text-align: right;
 }
 .order-row:hover { border-color: var(--primary); }
-.order-row-id { font-weight: 700; }
+.order-row-id { font-weight: 700; display: flex; align-items: center; gap: 8px; }
+
+.order-row-new {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(30, 107, 82, 0.25);
+  animation: pulse-new 1.4s ease-in-out infinite;
+}
+.order-row-delayed {
+  border-color: var(--danger);
+  background: #fdecea;
+}
+.order-row-delayed:hover { border-color: var(--danger); }
+
+.badge-new, .badge-delayed {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: white;
+}
+.badge-new { background: var(--primary); }
+.badge-delayed { background: var(--danger); }
+
+@keyframes pulse-new {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(30, 107, 82, 0.25); }
+  50% { box-shadow: 0 0 0 6px rgba(30, 107, 82, 0.12); }
+}

@@ -56,11 +56,14 @@ Deno.serve(async (req) => {
 
   const sendResult = await sendOtpToCustomer(order.customer_phone, code, order_id);
 
+  // The code itself is never returned here on purpose - the driver calls
+  // this endpoint and must keep asking the customer verbally. To see the
+  // code, use get-delivery-otp (customer's own order-tracking screen, or
+  // call_center for guest/call-center orders) - see supabase/functions/get-delivery-otp.
   return jsonResponse({
     order_id,
     otp_id: freshRow?.id,
     expires_at: expiresAt.toISOString(),
     otp_channel: sendResult.channel,
-    otp_code_debug: sendResult.channel === "none" ? code : undefined,
   });
 });
