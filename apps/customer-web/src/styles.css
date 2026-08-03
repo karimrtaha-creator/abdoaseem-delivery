@@ -1,0 +1,419 @@
+/* ============================================================================
+   Design tokens - "layers of koshary" identity.
+   Tomato sauce + crispy fried onion + lentil brown on a warm rice-cream
+   ground. Every color/type/radius/shadow decision below derives from these
+   variables - nothing hardcoded downstream.
+   ============================================================================ */
+:root {
+  --color-tomato: #c23616;
+  --color-tomato-dark: #8f2a10;
+  --color-tomato-tint: #fbe4db;
+  --color-onion: #d9a441;
+  --color-onion-dark: #a97620;
+  --color-onion-tint: #fbedd2;
+  --color-lentil: #2e2013;
+  --color-lentil-muted: #6b5a48;
+  --color-rice: #fbf3e4;
+  --color-surface: #ffffff;
+  --color-parsley: #5b7346;
+  --color-alert: #b3261e;
+  --color-border: #ead9be;
+
+  --font-display: "Lalezar", "Tahoma", sans-serif;
+  --font-body: "Cairo", "Tahoma", sans-serif;
+
+  --radius-sm: 10px;
+  --radius-md: 18px;
+  --radius-lg: 32px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 2px 8px rgba(46, 32, 19, 0.08);
+  --shadow-md: 0 8px 24px rgba(46, 32, 19, 0.12);
+  --shadow-lg: 0 16px 48px rgba(46, 32, 19, 0.18);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 40px;
+  --space-6: 64px;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--color-rice);
+  color: var(--color-lentil);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .display {
+  font-family: var(--font-display);
+  font-weight: 400; /* Lalezar only ships one weight - it carries plenty of
+    presence on its own, adding synthetic bold would distort the letterforms */
+  line-height: 1.15;
+  margin: 0;
+}
+
+p { line-height: 1.6; margin: 0; }
+
+a { color: inherit; }
+
+button, input, select { font-family: var(--font-body); }
+
+:focus-visible {
+  outline: 3px solid var(--color-onion-dark);
+  outline-offset: 2px;
+}
+
+::selection { background: var(--color-tomato-tint); color: var(--color-tomato-dark); }
+
+/* ---------------------------------------------------------------------------
+   Layout shell
+   --------------------------------------------------------------------------- */
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 var(--space-4); }
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--color-rice);
+  border-bottom: 1px solid var(--color-border);
+}
+.site-header .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-block: var(--space-3);
+}
+.brand {
+  /* Latin wordmark, so it leans on Cairo (which covers Latin cleanly)
+     rather than Lalezar, which is drawn for Arabic letterforms - bold
+     weight + wide tracking gives it a logotype feel without depending on
+     a display face's Latin coverage. */
+  font-family: var(--font-body);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  font-size: 1.3rem;
+  color: var(--color-tomato);
+}
+
+/* ---------------------------------------------------------------------------
+   Buttons
+   --------------------------------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 14px 28px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--color-tomato); color: #fff; box-shadow: var(--shadow-sm); }
+.btn-primary:hover { background: var(--color-tomato-dark); box-shadow: var(--shadow-md); }
+.btn-ghost { background: transparent; color: var(--color-tomato); border: 2px solid var(--color-tomato); }
+.btn-ghost:hover { background: var(--color-tomato-tint); }
+.btn-lg { padding: 18px 36px; font-size: 1.1rem; }
+
+/* ---------------------------------------------------------------------------
+   Hero - the koshary bowl cross-section
+   --------------------------------------------------------------------------- */
+.hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  margin-top: var(--space-4);
+  padding: var(--space-6) var(--space-5);
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  isolation: isolate;
+}
+
+/* The bowl's layers, bottom to top: rice, lentils, macaroni, chickpea sauce,
+   tomato dagga, crispy onion scatter on top - drawn as stacked bands behind
+   the hero copy, exactly the order the dish is actually built in. */
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    linear-gradient(
+      to top,
+      var(--color-rice) 0%,
+      var(--color-rice) 8%,
+      #e8dcc4 8%, #e8dcc4 24%,
+      #6b5238 24%, #6b5238 40%,
+      #c9924a 40%, #c9924a 56%,
+      #d9c08a 56%, #d9c08a 68%,
+      var(--color-tomato) 68%, var(--color-tomato) 88%,
+      var(--color-tomato-dark) 88%, var(--color-tomato-dark) 100%
+    );
+}
+/* crispy onion scatter, sitting on the top band */
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 68% 0;
+  z-index: -1;
+  background-image:
+    radial-gradient(circle, var(--color-onion) 2.5px, transparent 3px),
+    radial-gradient(circle, var(--color-onion-dark) 2px, transparent 2.5px);
+  background-size: 34px 34px, 22px 22px;
+  background-position: 0 0, 12px 15px;
+  opacity: 0.85;
+}
+
+.hero-card {
+  position: relative;
+  max-width: 560px;
+  background: rgba(251, 243, 228, 0.94);
+  backdrop-filter: blur(2px);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-4);
+  box-shadow: var(--shadow-lg);
+}
+.hero-card h1 {
+  font-size: clamp(2.4rem, 6vw, 3.6rem);
+  color: var(--color-tomato-dark);
+}
+.hero-card p {
+  margin-top: var(--space-2);
+  font-size: 1.1rem;
+  color: var(--color-lentil-muted);
+  max-width: 42ch;
+}
+.hero-card .row { display: flex; gap: var(--space-3); margin-top: var(--space-4); flex-wrap: wrap; }
+
+/* ---------------------------------------------------------------------------
+   Offers ribbon - the signature automated element
+   --------------------------------------------------------------------------- */
+/* Docked to a corner, not full-width centered - a centered bar would sit
+   directly over the hero's centered CTA row on short viewports (found by
+   actually rendering this, not assumed). A corner toast never competes
+   with the primary action for the same screen real estate. */
+.offers-ribbon {
+  position: fixed;
+  inset-inline-start: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 50;
+  pointer-events: none;
+}
+.offers-card {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--color-lentil);
+  color: #fff;
+  border-radius: var(--radius-pill);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  box-shadow: var(--shadow-lg);
+  max-width: min(calc(100vw - 32px), 380px);
+  animation: offer-rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes offer-rise {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.offers-card .tag {
+  background: var(--color-onion);
+  color: var(--color-lentil);
+  font-weight: 700;
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+.offers-card .text { font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.offers-card .price { font-family: var(--font-display); color: var(--color-onion); font-size: 1.1rem; white-space: nowrap; }
+.offers-card button {
+  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  color: #fff;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.offers-card button:hover { background: rgba(255, 255, 255, 0.22); }
+
+.offers-pill {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--color-onion);
+  color: var(--color-lentil);
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 10px 20px;
+  font-weight: 700;
+  font-family: var(--font-body);
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  animation: offer-rise 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .offers-card, .offers-pill { animation: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   Menu category cards
+   --------------------------------------------------------------------------- */
+.section { padding-block: var(--space-6); }
+.section-title { font-size: 2rem; color: var(--color-tomato-dark); margin-bottom: var(--space-4); }
+
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+.category-card {
+  display: block;
+  width: 100%;
+  text-align: right;
+  font-family: inherit;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  cursor: pointer;
+}
+.category-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
+.category-card h3 { font-size: 1.4rem; color: var(--color-tomato); margin-bottom: var(--space-1); }
+.category-card p { color: var(--color-lentil-muted); font-size: 0.95rem; }
+
+.muted { color: var(--color-lentil-muted); }
+.error-text { color: var(--color-alert); font-weight: 600; }
+
+@media (max-width: 640px) {
+  .hero { padding: var(--space-5) var(--space-3); min-height: 340px; }
+  .hero-card { max-width: 100%; }
+}
+
+/* ---------------------------------------------------------------------------
+   Koshary mascot - spins three times, lands, points at the hotline number,
+   holds, relaxes, pauses, repeats. One shared cycle length keeps the body,
+   the pointing arm and the hotline badge's pop all in phase.
+   --------------------------------------------------------------------------- */
+:root { --mascot-cycle: 8s; }
+
+.mascot-wrap {
+  position: absolute;
+  inset-inline-end: 4%;
+  bottom: 0;
+  width: clamp(160px, 22vw, 240px);
+  filter: drop-shadow(0 12px 20px rgba(46, 32, 19, 0.25));
+}
+.mascot-svg { width: 100%; height: auto; overflow: visible; }
+
+.mascot-body {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mascot-spin var(--mascot-cycle) cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+@keyframes mascot-spin {
+  0%, 3% { transform: rotate(0deg); }
+  38% { transform: rotate(1080deg); } /* three full turns */
+  46% { transform: rotate(1074deg); } /* a small settle-back wobble */
+  52%, 100% { transform: rotate(1080deg); }
+}
+
+.mascot-arm-point {
+  animation: mascot-point var(--mascot-cycle) ease-in-out infinite;
+}
+@keyframes mascot-point {
+  0%, 46% { transform: rotate(0deg); }
+  54% { transform: rotate(-58deg); }
+  88% { transform: rotate(-58deg); }
+  97%, 100% { transform: rotate(0deg); }
+}
+
+.mascot-steam .steam-line { animation-duration: var(--mascot-cycle); }
+
+.hotline-badge {
+  position: absolute;
+  inset-inline-end: -8%;
+  bottom: 6%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--color-tomato);
+  color: #fff;
+  border-radius: var(--radius-md);
+  padding: 6px 14px;
+  box-shadow: var(--shadow-md);
+  transform-origin: center;
+  animation: hotline-pop var(--mascot-cycle) ease-in-out infinite;
+}
+.hotline-label { font-size: 0.7rem; opacity: 0.9; }
+.hotline-number { font-family: var(--font-display); font-size: 1.3rem; letter-spacing: 0.03em; }
+@keyframes hotline-pop {
+  0%, 48% { transform: scale(0.92); opacity: 0.75; }
+  55% { transform: scale(1.12); opacity: 1; }
+  85% { transform: scale(1); opacity: 1; }
+  95%, 100% { transform: scale(0.92); opacity: 0.75; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mascot-body, .mascot-arm-point, .hotline-badge, .mascot-steam .steam-line { animation: none; }
+  .mascot-arm-point { transform: rotate(-58deg); }
+  .hotline-badge { transform: scale(1); opacity: 1; }
+}
+@media (max-width: 640px) {
+  .mascot-wrap { position: static; margin: var(--space-4) auto var(--space-5); width: 180px; }
+}
+
+/* ---------------------------------------------------------------------------
+   Footer - real contact channels (phone order, WhatsApp, Instapay)
+   --------------------------------------------------------------------------- */
+.site-footer {
+  background: var(--color-lentil);
+  color: #fff;
+  margin-top: var(--space-6);
+  padding-block: var(--space-5);
+}
+.footer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+}
+.site-footer h3 { font-size: 1.2rem; margin-bottom: var(--space-2); }
+.site-footer .muted { color: color-mix(in srgb, #fff 60%, transparent); font-size: 0.9rem; }
+.footer-number {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  color: var(--color-onion);
+  text-decoration: none;
+  margin-top: var(--space-1);
+}
+.footer-link {
+  display: block;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  margin-top: var(--space-1);
+  direction: ltr;
+  text-align: right;
+}
+.footer-link:hover { color: var(--color-onion); }

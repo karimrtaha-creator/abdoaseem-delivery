@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "customer-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/customer-web", "run", "dev"],
+      "port": 5174
+    }
+  ]
+}
