@@ -7,6 +7,7 @@ export interface Profile {
   name: string;
   role: string;
   branch_id: number | null;
+  region_id: number | null;
   is_active: boolean;
 }
 
@@ -25,7 +26,7 @@ export function useProfile(session: Session | null) {
     setLoading(true);
     supabase
       .from("users")
-      .select("id, name, role, branch_id, is_active")
+      .select("id, name, role, branch_id, region_id, is_active")
       .eq("id", session.user.id)
       .single()
       .then(({ data }) => {

@@ -41,33 +41,46 @@ class _OtpConfirmScreenState extends State<OtpConfirmScreen> {
     try {
       final res = await _deliveryService.verifyOtp(orderId: widget.order.id, code: code);
       if (!mounted) return;
+      // Never surface anything about what the real code is here - only a
+      // remaining-attempts count, nothing that narrows down a guess.
       switch (res.result) {
         case 'delivered':
           Navigator.of(context).popUntil((route) => route.isFirst);
           break;
         case 'wrong_code':
           setState(() {
-            _message = 'الكود غلط - محاولات متبقية: ${res.attemptsRemaining}';
+            _message = 'الكود غلط - باقي لك ${res.attemptsRemaining} محاولات';
             _messageColor = Colors.red;
           });
           break;
         case 'expired':
           setState(() {
-            _message = 'الكود انتهت صلاحيته - اضغط "إعادة إرسال الكود"';
+            _message = 'الكود منتهي - اضغط "إعادة إرسال الكود"';
             _messageColor = Colors.orange;
           });
           break;
         case 'locked':
           setState(() {
             _locked = true;
-            _message = 'تم إيقاف الكود بعد 3 محاولات غلط. اتبلغ المدير تلقائيًا.';
+            _message = 'الكود مقفول بعد محاولات كتير غلط - لازم إعادة إرسال';
             _messageColor = Colors.red;
           });
           break;
+        case 'no_active_code':
+          setState(() {
+            _message = 'مفيش كود شغال للأوردر ده - اضغط "إعادة إرسال الكود"';
+            _messageColor = Colors.orange;
+          });
+          break;
       }
+    } on NoNetworkException {
+      setState(() {
+        _message = 'مفيش نت - اتأكد من الاتصال وحاول تاني';
+        _messageColor = Colors.red;
+      });
     } catch (e) {
       setState(() {
-        _message = 'حصل خطأ، حاول تاني';
+        _message = 'حصل خطأ في الاتصال بالسيرفر، حاول تاني';
         _messageColor = Colors.red;
       });
     } finally {
@@ -78,17 +91,33 @@ class _OtpConfirmScreenState extends State<OtpConfirmScreen> {
   Future<void> _resend() async {
     setState(() => _submitting = true);
     try {
-      await _deliveryService.resendOtp(orderId: widget.order.id);
+      final res = await _deliveryService.resendOtp(orderId: widget.order.id);
       if (!mounted) return;
+      switch (res.result) {
+        case 'resent':
+          setState(() {
+            _locked = false;
+            _message = 'اتبعت كود جديد للعميل';
+            _messageColor = Colors.green;
+            _codeController.clear();
+          });
+          break;
+        case 'resend_limit_reached':
+          setState(() {
+            _locked = true;
+            _message = 'تعدّيت الحد الأقصى لإعادة الإرسال - كلم المدير أو الديسباتشر';
+            _messageColor = Colors.red;
+          });
+          break;
+      }
+    } on NoNetworkException {
       setState(() {
-        _locked = false;
-        _message = 'اتبعت كود جديد للعميل';
-        _messageColor = Colors.green;
-        _codeController.clear();
+        _message = 'مفيش نت - اتأكد من الاتصال وحاول تاني';
+        _messageColor = Colors.red;
       });
     } catch (e) {
       setState(() {
-        _message = 'فشل إعادة الإرسال، حاول تاني';
+        _message = 'حصل خطأ في الاتصال بالسيرفر، حاول تاني';
         _messageColor = Colors.red;
       });
     } finally {
@@ -102,6 +131,19 @@ class _OtpConfirmScreenState extends State<OtpConfirmScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('اتسجلت الحالة - المدير هياخد إجراء')),
+      );
+    } on NoNetworkException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('مفيش نت - البلاغ ماوصلش، حاول تاني')),
+      );
+    } on ComplaintNotRecordedException {
+      // Never show the "تم الإبلاغ" success message here - the write
+      // provably did not happen (either it threw, or it returned with no
+      // row created), so the driver must be told explicitly.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('البلاغ ماوصلش - حاول تاني أو كلم الديسباتشر')),
       );
     } catch (e) {
       if (!mounted) return;

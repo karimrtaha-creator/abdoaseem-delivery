@@ -1,13 +1,23 @@
 // Section 5, steps 6-7: driver enters the code the customer read out loud.
-// Max 3 attempts; on the 3rd wrong attempt the order is flagged for manager
+// Max 5 attempts; on the 5th wrong attempt the order is flagged for manager
 // follow-up via a complaint row (see complaints table) - the schema has no
 // separate "delivery issue" status, so this is a deliberate reuse of the
 // existing complaints mechanism rather than a new enum value.
+//
+// Every *expected* outcome (right code, wrong code, expired, locked, no
+// active code) returns HTTP 200 with a `result` field - these are normal
+// business responses to a verify attempt, not transport errors. A client
+// SDK that throws on non-2xx (e.g. supabase_flutter's functions.invoke)
+// would otherwise never see this payload for anything but success, which
+// is exactly what silently broke the driver app's lock/expiry messaging
+// before this fix. Real HTTP error codes are reserved for genuine
+// exceptions: 401 unauthorized, 403 wrong role/not your order, 404 order
+// not found, 409 wrong order status, 500 server error.
 import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { minutesBetween } from "../_shared/sla.ts";
 
-const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = 5;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -48,13 +58,13 @@ Deno.serve(async (req) => {
     .limit(1)
     .maybeSingle();
   if (otpError) return errorResponse(otpError.message, 500);
-  if (!otp) return errorResponse("no active OTP for this order - use resend-otp", 409);
+  if (!otp) return jsonResponse({ result: "no_active_code" });
 
   if (new Date(otp.expires_at).getTime() < Date.now()) {
-    return jsonResponse({ result: "expired" }, 410);
+    return jsonResponse({ result: "expired" });
   }
   if (otp.attempts >= MAX_ATTEMPTS) {
-    return jsonResponse({ result: "locked" }, 423);
+    return jsonResponse({ result: "locked" });
   }
 
   if (otp.code !== code) {
@@ -62,14 +72,18 @@ Deno.serve(async (req) => {
     await admin.from("otp_codes").update({ attempts }).eq("id", otp.id);
 
     if (attempts >= MAX_ATTEMPTS) {
-      await admin.from("complaints").insert({
-        order_id,
-        type: "other",
-        description: "فشل التحقق من كود OTP بعد 3 محاولات - مشكلة تسليم تحتاج متابعة فورية من المدير.",
-      });
-      return jsonResponse({ result: "locked", attempts_remaining: 0 }, 423);
+      // Not written to complaints: that table has no viewing screen yet
+      // anywhere in this project, so a silent DB write nobody can see is
+      // worse than a log line a developer can actually go find. Revisit
+      // once the complaints screen (spec section 6, manager dashboard) exists.
+      console.warn(
+        `order ${order_id}: OTP verification locked after ${MAX_ATTEMPTS} failed attempts (driver ${caller.id})`,
+      );
+      return jsonResponse({ result: "locked", attempts_remaining: 0 });
     }
-    return jsonResponse({ result: "wrong_code", attempts_remaining: MAX_ATTEMPTS - attempts }, 400);
+    // Never echo the submitted code or anything about the real one - only
+    // a remaining-attempts count, nothing that narrows down a guess.
+    return jsonResponse({ result: "wrong_code", attempts_remaining: MAX_ATTEMPTS - attempts });
   }
 
   const deliveredTime = new Date();
