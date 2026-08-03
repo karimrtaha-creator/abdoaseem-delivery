@@ -10,8 +10,17 @@ import { UserManagement } from "./pages/UserManagement";
 import { Dashboard } from "./pages/Dashboard";
 import { DriverPerformance } from "./pages/DriverPerformance";
 import { Complaints } from "./pages/Complaints";
+import { BranchManagement } from "./pages/BranchManagement";
 
-type TabKey = "dispatch" | "call_center" | "acceptance" | "users" | "dashboard" | "performance" | "complaints";
+type TabKey =
+  | "dispatch"
+  | "call_center"
+  | "acceptance"
+  | "users"
+  | "dashboard"
+  | "performance"
+  | "complaints"
+  | "branches";
 
 const ROLE_TITLES: Record<string, string> = {
   dispatcher: "ديسباتشر",
@@ -35,6 +44,7 @@ const TABS_BY_ROLE: Record<string, { key: TabKey; label: string }[]> = {
     { key: "performance", label: "أداء الطيارين" },
     { key: "complaints", label: "الشكاوى" },
     { key: "users", label: "إدارة المستخدمين" },
+    { key: "branches", label: "الفروع والمناطق" },
   ],
   regional_manager: [
     { key: "dashboard", label: "لوحة المتابعة" },
@@ -66,6 +76,8 @@ function ScreenFor({ tab, profile }: { tab: TabKey; profile: Profile }) {
       return <DriverPerformance profile={profile} />;
     case "complaints":
       return <Complaints />;
+    case "branches":
+      return <BranchManagement />;
   }
 }
 

@@ -4,9 +4,17 @@ import type { Profile } from "../lib/useProfile";
 
 interface OrderRow {
   id: number;
+  pos_order_id: string | null;
   status: string;
   branch_id: number;
+  driver_id: string | null;
+  order_time: string;
+  dispatch_time: string | null;
   delivered_time: string | null;
+  sla_minutes: number | null;
+  delay_minutes: number | null;
+  is_delayed: boolean | null;
+  payment_method: string;
 }
 
 interface Branch {
@@ -15,21 +23,51 @@ interface Branch {
   region_id: number | null;
 }
 
+interface DriverLite {
+  id: string;
+  name: string;
+}
+
 const ONGOING_STATUSES = ["preparing", "out_for_delivery", "delayed"];
+
+function csvEscape(value: string | number | boolean | null): string {
+  const str = value == null ? "" : String(value);
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
+
+function downloadCsv(filename: string, rows: (string | number | boolean | null)[][]) {
+  // Leading BOM so Excel opens Arabic text as UTF-8 correctly instead of
+  // guessing the wrong codepage and showing garbled characters.
+  const csv = "﻿" + rows.map((row) => row.map(csvEscape).join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 export function Dashboard({ profile }: { profile: Profile }) {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [drivers, setDrivers] = useState<DriverLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [focusBranchId, setFocusBranchId] = useState<number | "all">("all");
 
   async function load() {
-    const [ordersRes, branchesRes] = await Promise.all([
-      supabase.from("orders").select("id, status, branch_id, delivered_time"),
+    const [ordersRes, branchesRes, driversRes] = await Promise.all([
+      supabase
+        .from("orders")
+        .select(
+          "id, pos_order_id, status, branch_id, driver_id, order_time, dispatch_time, delivered_time, sla_minutes, delay_minutes, is_delayed, payment_method",
+        ),
       supabase.from("branches").select("id, name, region_id"),
+      supabase.from("users").select("id, name").eq("role", "driver"),
     ]);
     setOrders((ordersRes.data as OrderRow[]) ?? []);
     setBranches((branchesRes.data as Branch[]) ?? []);
+    setDrivers((driversRes.data as DriverLite[]) ?? []);
     setLoading(false);
   }
 
@@ -92,6 +130,44 @@ export function Dashboard({ profile }: { profile: Profile }) {
     });
   }, [scopedBranches, orders, startOfDayIso]);
 
+  function exportDailyReport() {
+    const branchName = new Map(branches.map((b) => [b.id, b.name]));
+    const driverName = new Map(drivers.map((d) => [d.id, d.name]));
+    const todaysOrders = visibleOrders.filter((o) => o.order_time >= startOfDayIso);
+
+    const header = [
+      "رقم الأوردر",
+      "رقم الكاشير",
+      "الفرع",
+      "الحالة",
+      "الطيار",
+      "وقت الطلب",
+      "وقت الخروج",
+      "وقت التسليم",
+      "SLA (دقيقة)",
+      "التأخير (دقيقة)",
+      "متأخر؟",
+      "طريقة الدفع",
+    ];
+    const rows = todaysOrders.map((o) => [
+      o.id,
+      o.pos_order_id,
+      branchName.get(o.branch_id) ?? o.branch_id,
+      o.status,
+      o.driver_id ? driverName.get(o.driver_id) ?? o.driver_id : "",
+      o.order_time,
+      o.dispatch_time,
+      o.delivered_time,
+      o.sla_minutes,
+      o.delay_minutes,
+      o.is_delayed ? "نعم" : "لا",
+      o.payment_method,
+    ]);
+
+    const todayLabel = new Date().toISOString().slice(0, 10);
+    downloadCsv(`تقرير-يومي-${todayLabel}.csv`, [header, ...rows]);
+  }
+
   if (loading) return <p className="muted">جاري التحميل...</p>;
 
   return (
@@ -125,6 +201,12 @@ export function Dashboard({ profile }: { profile: Profile }) {
           <span className="stat-value">{deliveredTodayCount}</span>
           <span className="stat-label">اتسلمت النهاردة</span>
         </div>
+      </div>
+
+      <div className="card">
+        <button className="btn-primary" onClick={exportDailyReport}>
+          تصدير التقرير اليومي (CSV)
+        </button>
       </div>
 
       {focusBranchId === "all" && scopedBranches.length > 1 && (
