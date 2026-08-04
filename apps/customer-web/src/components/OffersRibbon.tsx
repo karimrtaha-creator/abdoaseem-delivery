@@ -67,12 +67,14 @@ export function OffersRibbon({ hasStartedOrder }: { hasStartedOrder: boolean }) 
   return (
     <div className="offers-ribbon">
       <div className="offers-card" role="status" aria-live="polite">
-        <span className="tag">عرض اليوم</span>
-        <span className="text">{offer.name}</span>
-        <span className="price">{offer.price} ج</span>
-        <button onClick={() => setDismissed(true)} aria-label="اقفل">
+        <button className="offers-close" onClick={() => setDismissed(true)} aria-label="اقفل">
           ✕
         </button>
+        <span className="offers-nudge">🔥 شوف عروض النهاردة</span>
+        <div className="offers-detail">
+          <span className="text">{offer.name}</span>
+          <span className="price">{offer.price} ج</span>
+        </div>
       </div>
     </div>
   );

@@ -222,45 +222,48 @@ button, input, select { font-family: var(--font-body); }
 }
 .offers-card {
   pointer-events: auto;
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  flex-direction: column;
+  gap: var(--space-2);
   background: var(--color-lentil);
   color: #fff;
-  border-radius: var(--radius-pill);
-  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5) var(--space-4) var(--space-4);
   box-shadow: var(--shadow-lg);
-  max-width: min(calc(100vw - 32px), 380px);
+  width: min(calc(100vw - 32px), 340px);
   animation: offer-rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @keyframes offer-rise {
   from { transform: translateY(-16px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
-.offers-card .tag {
-  background: var(--color-onion);
-  color: var(--color-lentil);
-  font-weight: 700;
-  font-size: 0.75rem;
-  padding: 4px 10px;
-  border-radius: var(--radius-pill);
-  white-space: nowrap;
+.offers-nudge { font-family: var(--font-display); font-size: 1.4rem; }
+.offers-detail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-1);
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
 }
-.offers-card .text { font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.offers-card .price { font-family: var(--font-display); color: var(--color-onion); font-size: 1.1rem; white-space: nowrap; }
-.offers-card button {
+.offers-detail .text { font-size: 1rem; color: rgba(255, 255, 255, 0.85); }
+.offers-detail .price { font-family: var(--font-display); color: var(--color-onion); font-size: 1.3rem; white-space: nowrap; }
+.offers-close {
+  position: absolute;
+  top: var(--space-2);
+  inset-inline-start: var(--space-2);
   background: rgba(255, 255, 255, 0.12);
   border: none;
   color: #fff;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   cursor: pointer;
-  font-size: 1rem;
+  font-size: 0.9rem;
   line-height: 1;
-  flex-shrink: 0;
 }
-.offers-card button:hover { background: rgba(255, 255, 255, 0.22); }
+.offers-close:hover { background: rgba(255, 255, 255, 0.22); }
 
 .offers-pill {
   pointer-events: auto;
@@ -320,76 +323,40 @@ button, input, select { font-family: var(--font-body); }
 }
 
 /* ---------------------------------------------------------------------------
-   Koshary mascot - spins three times, lands, points at the hotline number,
-   holds, relaxes, pauses, repeats. One shared cycle length keeps the body,
-   the pointing arm and the hotline badge's pop all in phase.
+   Koshary box - static image, hotline number underneath. The earlier
+   spin/point animation was cut on request; no motion here on purpose.
    --------------------------------------------------------------------------- */
-:root { --mascot-cycle: 8s; }
-
-.mascot-wrap {
+.koshary-static {
   position: absolute;
   inset-inline-end: 4%;
-  bottom: 0;
+  bottom: 6%;
   width: clamp(160px, 22vw, 240px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+.koshary-static-svg {
+  width: 100%;
+  height: auto;
   filter: drop-shadow(0 12px 20px rgba(46, 32, 19, 0.25));
 }
-.mascot-svg { width: 100%; height: auto; overflow: visible; }
-
-.mascot-body {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: mascot-spin var(--mascot-cycle) cubic-bezier(0.45, 0, 0.2, 1) infinite;
-}
-@keyframes mascot-spin {
-  0%, 3% { transform: rotate(0deg); }
-  38% { transform: rotate(1080deg); } /* three full turns */
-  46% { transform: rotate(1074deg); } /* a small settle-back wobble */
-  52%, 100% { transform: rotate(1080deg); }
-}
-
-.mascot-arm-point {
-  animation: mascot-point var(--mascot-cycle) ease-in-out infinite;
-}
-@keyframes mascot-point {
-  0%, 46% { transform: rotate(0deg); }
-  54% { transform: rotate(-58deg); }
-  88% { transform: rotate(-58deg); }
-  97%, 100% { transform: rotate(0deg); }
-}
-
-.mascot-steam .steam-line { animation-duration: var(--mascot-cycle); }
-
-.hotline-badge {
-  position: absolute;
-  inset-inline-end: -8%;
-  bottom: 6%;
+.koshary-hotline {
   display: flex;
   flex-direction: column;
   align-items: center;
   background: var(--color-tomato);
   color: #fff;
+  text-decoration: none;
   border-radius: var(--radius-md);
-  padding: 6px 14px;
+  padding: 8px 20px;
   box-shadow: var(--shadow-md);
-  transform-origin: center;
-  animation: hotline-pop var(--mascot-cycle) ease-in-out infinite;
 }
-.hotline-label { font-size: 0.7rem; opacity: 0.9; }
-.hotline-number { font-family: var(--font-display); font-size: 1.3rem; letter-spacing: 0.03em; }
-@keyframes hotline-pop {
-  0%, 48% { transform: scale(0.92); opacity: 0.75; }
-  55% { transform: scale(1.12); opacity: 1; }
-  85% { transform: scale(1); opacity: 1; }
-  95%, 100% { transform: scale(0.92); opacity: 0.75; }
-}
+.hotline-label { font-size: 0.75rem; opacity: 0.9; }
+.hotline-number { font-family: var(--font-display); font-size: 1.5rem; letter-spacing: 0.03em; }
 
-@media (prefers-reduced-motion: reduce) {
-  .mascot-body, .mascot-arm-point, .hotline-badge, .mascot-steam .steam-line { animation: none; }
-  .mascot-arm-point { transform: rotate(-58deg); }
-  .hotline-badge { transform: scale(1); opacity: 1; }
-}
 @media (max-width: 640px) {
-  .mascot-wrap { position: static; margin: var(--space-4) auto var(--space-5); width: 180px; }
+  .koshary-static { position: static; margin: var(--space-4) auto var(--space-5); width: 180px; }
 }
 
 /* ---------------------------------------------------------------------------
