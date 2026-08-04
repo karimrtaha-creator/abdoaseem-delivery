@@ -34,24 +34,74 @@ export function KosharyBox() {
         />
         <circle cx="52" cy="222" r="9" fill="var(--color-lentil)" />
 
-        {/* the spinning/bouncing body */}
+        {/* the spinning/bouncing body - matches the real container: yellow
+            cup, red "ABDO ASEEM" label band, macaroni-lentil base with
+            chickpeas at the rim, tomato dagga poured center-right, two
+            crispy-onion crescents, a lime wedge on top */}
         <g className="mascot-body">
-          <circle cx="120" cy="140" r="88" fill="#fff" stroke="var(--color-onion-dark)" strokeWidth="6" />
-          <circle cx="120" cy="140" r="76" fill="#efe4c8" />
-          <path d="M50 148 A 70 70 0 0 1 63 98 L 148 148 Z" fill="#6b5238" opacity="0.9" />
-          <path d="M63 98 A 70 70 0 0 1 126 70 L 148 148 Z" fill="#c9924a" opacity="0.92" />
-          <path d="M126 70 A 70 70 0 0 1 180 108 L 148 148 Z" fill="#d9c08a" opacity="0.95" />
-          <path d="M180 108 A 70 70 0 0 1 173 194 A 70 70 0 0 1 72 202 L 120 148 Z" fill="var(--color-tomato)" />
-          <g fill="var(--color-onion)">
-            <circle cx="148" cy="120" r="4" />
-            <circle cx="160" cy="138" r="3" />
-            <circle cx="138" cy="148" r="3.5" />
-            <circle cx="154" cy="162" r="3" />
-            <circle cx="128" cy="172" r="4" />
-            <circle cx="110" cy="162" r="3" />
-            <circle cx="119" cy="180" r="3.5" />
-            <circle cx="96" cy="176" r="3" />
+          <circle cx="120" cy="140" r="90" fill="var(--color-cup)" stroke="var(--color-cup-dark)" strokeWidth="6" />
+          <circle cx="120" cy="140" r="78" fill="var(--color-base-mix)" />
+
+          {/* chickpeas around the rim - drawn before the sauce so the sauce
+              covers the ones under it, leaving the rest visible at the edge
+              exactly like the photo */}
+          <g fill="var(--color-chickpea)">
+            <circle cx="120" cy="64" r="4.5" />
+            <circle cx="95" cy="68" r="4" />
+            <circle cx="145" cy="68" r="4" />
+            <circle cx="70" cy="80" r="4.5" />
+            <circle cx="170" cy="80" r="4.5" />
+            <circle cx="53" cy="102" r="4" />
+            <circle cx="187" cy="102" r="4" />
+            <circle cx="46" cy="130" r="4.5" />
+            <circle cx="194" cy="130" r="4.5" />
+            <circle cx="50" cy="160" r="4" />
+            <circle cx="190" cy="160" r="4" />
+            <circle cx="62" cy="186" r="4.5" />
+            <circle cx="178" cy="186" r="4.5" />
+            <circle cx="90" cy="204" r="4" />
+            <circle cx="150" cy="204" r="4" />
           </g>
+
+          {/* tomato dagga, poured center-right - offset from the base
+              circle's center so the base + chickpeas still peek out at the
+              lower-left, same as the reference photo */}
+          <ellipse cx="134" cy="122" rx="65" ry="61" fill="var(--color-tomato)" />
+
+          {/* two crispy-onion crescents across the sauce */}
+          <path
+            d="M84 108 Q 112 90, 140 106"
+            stroke="var(--color-onion)"
+            strokeWidth="9"
+            strokeLinecap="round"
+            fill="none"
+          />
+          <path
+            d="M100 140 Q 132 118, 166 138"
+            stroke="var(--color-onion)"
+            strokeWidth="9"
+            strokeLinecap="round"
+            fill="none"
+          />
+
+          {/* lime wedge on top */}
+          <path d="M118 90 A 16 16 0 0 1 150 90 Z" fill="var(--color-lime)" stroke="#fff" strokeWidth="2" />
+          <path d="M134 90 L 134 78 M134 90 L 122 82 M134 90 L 146 82" stroke="#fff" strokeWidth="1.5" opacity="0.7" />
+
+          {/* the front label band */}
+          <rect x="52" y="196" width="136" height="30" rx="8" fill="var(--color-tomato-dark)" />
+          <text
+            x="120"
+            y="216"
+            textAnchor="middle"
+            fontFamily="var(--font-body)"
+            fontWeight="800"
+            fontSize="13"
+            letterSpacing="0.03em"
+            fill="#fff"
+          >
+            ABDO ASEEM
+          </text>
         </g>
 
         {/* the pointing arm - pivots from the shoulder toward the hotline badge */}

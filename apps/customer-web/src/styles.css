@@ -18,6 +18,11 @@
   --color-parsley: #5b7346;
   --color-alert: #b3261e;
   --color-border: #ead9be;
+  --color-cup: #eab13a;
+  --color-cup-dark: #c98f22;
+  --color-base-mix: #8a6338;
+  --color-chickpea: #ecdba6;
+  --color-lime: #8fae4e;
 
   --font-display: "Lalezar", "Tahoma", sans-serif;
   --font-body: "Cairo", "Tahoma", sans-serif;
@@ -200,14 +205,18 @@ button, input, select { font-family: var(--font-body); }
 /* ---------------------------------------------------------------------------
    Offers ribbon - the signature automated element
    --------------------------------------------------------------------------- */
-/* Docked to a corner, not full-width centered - a centered bar would sit
-   directly over the hero's centered CTA row on short viewports (found by
-   actually rendering this, not assumed). A corner toast never competes
-   with the primary action for the same screen real estate. */
+/* Docked below the header, not the bottom of the viewport. Bottom-corner
+   placement was tried and rendered - twice: once centered (sat on the
+   hero's CTA row) and once "corner-docked" via inset-inline-start, which
+   in this RTL layout is actually the RIGHT side, the same side the
+   hero-card already occupies. The hero fills most of the viewport height
+   on short screens, so any fixed-bottom position collides with something
+   in it. Top placement, clear of the sticky header, has nothing below it
+   to collide with. */
 .offers-ribbon {
   position: fixed;
-  inset-inline-start: var(--space-4);
-  bottom: var(--space-4);
+  top: calc(64px + var(--space-3));
+  inset-inline-end: var(--space-4);
   z-index: 50;
   pointer-events: none;
 }
@@ -225,7 +234,7 @@ button, input, select { font-family: var(--font-body); }
   animation: offer-rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @keyframes offer-rise {
-  from { transform: translateY(24px); opacity: 0; }
+  from { transform: translateY(-16px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
 .offers-card .tag {
