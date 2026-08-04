@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { OffersRibbon } from "../components/OffersRibbon";
-import { KosharyBox } from "../components/KosharyBox";
 
 interface MenuCategory {
   id: number;
@@ -50,7 +49,6 @@ export function Home() {
               <button className="btn btn-ghost btn-lg">شوف المنيو</button>
             </div>
           </div>
-          <KosharyBox />
         </section>
 
         <section className="section">
