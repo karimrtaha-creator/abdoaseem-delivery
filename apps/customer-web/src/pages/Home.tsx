@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 import { OffersRibbon } from "../components/OffersRibbon";
+import { useCart } from "../lib/CartContext";
 
 interface MenuCategory {
   id: number;
@@ -18,7 +20,8 @@ const CATEGORY_BLURBS: Record<string, string> = {
 
 export function Home() {
   const [categories, setCategories] = useState<MenuCategory[]>([]);
-  const [hasStartedOrder, setHasStartedOrder] = useState(false);
+  const navigate = useNavigate();
+  const cart = useCart();
 
   useEffect(() => {
     supabase
@@ -43,10 +46,12 @@ export function Home() {
             <h1>كشري الغباشي</h1>
             <p>ساخن ومقرمش زي ما اتعودت بالظبط - يوصلك لحد باب البيت في دقايق.</p>
             <div className="row">
-              <button className="btn btn-primary btn-lg" onClick={() => setHasStartedOrder(true)}>
+              <button className="btn btn-primary btn-lg" onClick={() => navigate("/menu")}>
                 اطلب دلوقتي
               </button>
-              <button className="btn btn-ghost btn-lg">شوف المنيو</button>
+              <Link to="/menu" className="btn btn-ghost btn-lg">
+                شوف المنيو
+              </Link>
             </div>
           </div>
         </section>
@@ -55,7 +60,7 @@ export function Home() {
           <h2 className="section-title">المنيو</h2>
           <div className="category-grid">
             {categories.map((c) => (
-              <button key={c.id} className="category-card" onClick={() => setHasStartedOrder(true)}>
+              <button key={c.id} className="category-card" onClick={() => navigate("/menu")}>
                 <h3>{c.name}</h3>
                 <p>{CATEGORY_BLURBS[c.name] ?? "تصفح الأصناف"}</p>
               </button>
@@ -85,7 +90,7 @@ export function Home() {
         </div>
       </footer>
 
-      <OffersRibbon hasStartedOrder={hasStartedOrder} />
+      <OffersRibbon hasStartedOrder={cart.count > 0} />
     </div>
   );
 }

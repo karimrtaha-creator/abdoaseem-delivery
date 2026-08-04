@@ -314,6 +314,43 @@ button, input, select { font-family: var(--font-body); }
 .category-card h3 { font-size: 1.4rem; color: var(--color-tomato); margin-bottom: var(--space-1); }
 .category-card p { color: var(--color-lentil-muted); font-size: 0.95rem; }
 
+/* ---------------------------------------------------------------------------
+   Menu page - item cards + sticky cart bar
+   --------------------------------------------------------------------------- */
+.menu-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.menu-card h3 { font-size: 1.1rem; color: var(--color-lentil); }
+.menu-card-footer { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.menu-card-price { font-family: var(--font-display); font-size: 1.2rem; color: var(--color-tomato-dark); }
+.menu-card .btn-primary { padding: 10px 16px; font-size: 0.9rem; }
+
+.cart-bar {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 40;
+  background: var(--color-lentil);
+  color: #fff;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.2);
+}
+.cart-bar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-block: var(--space-3);
+  font-size: 1.05rem;
+}
+
 .muted { color: var(--color-lentil-muted); }
 .error-text { color: var(--color-alert); font-weight: 600; }
 
