@@ -51,7 +51,7 @@ async function callFunction<T>(name: string, body: unknown): Promise<T> {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token;
   const { data, error } = await supabase.functions.invoke(name, {
-    body,
+    body: body as any,
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   if (error) throw new Error(error.message);
