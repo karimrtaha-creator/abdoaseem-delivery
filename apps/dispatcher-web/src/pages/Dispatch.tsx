@@ -60,7 +60,6 @@ export function Dispatch({ profile }: { profile: Profile }) {
   const [selectedOrderItems, setSelectedOrderItems] = useState<OrderItemRow[]>([]);
   const [driverId, setDriverId] = useState("");
   const [fee, setFee] = useState("");
-  const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
@@ -159,7 +158,6 @@ export function Dispatch({ profile }: { profile: Profile }) {
     setSelectedOrderItems([]);
     setDriverId("");
     setFee("");
-    setReceiptFile(null);
     setError(null);
     setResult(null);
     setStep("confirm");
@@ -182,8 +180,8 @@ export function Dispatch({ profile }: { profile: Profile }) {
   }
 
   async function confirmExit() {
-    if (!selectedOrder || !driverId || !fee || !receiptFile) {
-      setError("لازم تختار الطيار وتدخل سعر التوصيل وتصوّر الرسيت");
+    if (!selectedOrder || !driverId || !fee) {
+      setError("لازم تختار الطيار وتدخل سعر التوصيل");
       return;
     }
     const feeNumber = Number(fee);
@@ -195,12 +193,6 @@ export function Dispatch({ profile }: { profile: Profile }) {
     setSubmitting(true);
     setError(null);
     try {
-      const path = `${profile.branch_id}/${selectedOrder.id}-${Date.now()}.jpg`;
-      const { error: uploadError } = await supabase.storage
-        .from("receipts")
-        .upload(path, receiptFile, { contentType: receiptFile.type || "image/jpeg" });
-      if (uploadError) throw new Error(`فشل رفع صورة الرسيت: ${uploadError.message}`);
-
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
       const { data, error: fnError } = await supabase.functions.invoke("dispatch-order", {
@@ -208,7 +200,6 @@ export function Dispatch({ profile }: { profile: Profile }) {
           order_id: selectedOrder.id,
           driver_id: driverId,
           delivery_fee_after_tax: feeNumber,
-          receipt_photo_url: path,
         },
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
@@ -273,16 +264,6 @@ export function Dispatch({ profile }: { profile: Profile }) {
             value={fee}
             onChange={(e) => setFee(e.target.value)}
             placeholder="مثال: 24"
-          />
-        </label>
-
-        <label>
-          صورة الرسيت
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)}
           />
         </label>
 

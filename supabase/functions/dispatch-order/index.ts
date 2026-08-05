@@ -29,10 +29,8 @@ Deno.serve(async (req) => {
     return errorResponse("invalid JSON body");
   }
   const { order_id, driver_id, delivery_fee_after_tax, receipt_photo_url } = body;
-  if (!order_id || !driver_id || delivery_fee_after_tax == null || !receipt_photo_url) {
-    return errorResponse(
-      "order_id, driver_id, delivery_fee_after_tax and receipt_photo_url are all required",
-    );
+  if (!order_id || !driver_id || delivery_fee_after_tax == null) {
+    return errorResponse("order_id, driver_id and delivery_fee_after_tax are all required");
   }
   if (delivery_fee_after_tax <= 0) return errorResponse("delivery_fee_after_tax must be > 0");
 
