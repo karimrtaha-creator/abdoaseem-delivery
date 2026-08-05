@@ -1,0 +1,10 @@
+# Only overrides what needs overriding: check-sla-breaches is called
+# exclusively by pg_cron (see migration 0022), never by a signed-in user,
+# so it has no real user JWT to present. Every other function keeps the
+# platform's default JWT verification (they all call getCaller(), which
+# needs a real user session to look up the caller's role) - this only
+# disables the gateway-level check for this one cron-only function, whose
+# own code (see index.ts) still requires a matching secret before doing
+# anything, so it's not actually open to the public.
+[functions.check-sla-breaches]
+verify_jwt = false

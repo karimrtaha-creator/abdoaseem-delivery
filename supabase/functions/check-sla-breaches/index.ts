@@ -15,15 +15,20 @@ Deno.serve(async (req) => {
   // This function has no per-user role to check (it's meant to run
   // unattended on a schedule, not be called by a signed-in staff member),
   // so it's gated the way Supabase's own docs recommend for cron-only
-  // functions: only a request presenting the service_role key - known to
-  // the cron job/backend, never shipped to either frontend - can invoke
-  // it. Found during an audit with no auth check at all: any anonymous
-  // caller with just the public anon key could trigger it and see internal
-  // order counts.
+  // functions: only a request presenting a known secret can invoke it.
+  // Found during an audit with no auth check at all: any anonymous caller
+  // with just the public anon key could trigger it and see internal order
+  // counts. Accepts either the service_role key or a dedicated CRON_SECRET
+  // (what the actual pg_cron job - see migration 0022 - is configured
+  // with, via Vault, so the real service_role key never has to be pasted
+  // into a cron job definition that's visible in the cron.job table).
   const authHeader = req.headers.get("Authorization") ?? "";
   const presentedToken = authHeader.replace(/^Bearer\s+/i, "");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!serviceRoleKey || presentedToken !== serviceRoleKey) {
+  const cronSecret = Deno.env.get("CRON_SECRET");
+  const authorized =
+    (!!serviceRoleKey && presentedToken === serviceRoleKey) || (!!cronSecret && presentedToken === cronSecret);
+  if (!authorized) {
     return errorResponse("unauthorized", 401);
   }
 
