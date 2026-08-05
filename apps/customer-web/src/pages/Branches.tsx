@@ -65,7 +65,7 @@ export function Branches() {
       <header className="site-header">
         <div className="wrap">
           <Link to="/" className="brand" style={{ textDecoration: "none" }}>
-            ABDO ASEEM
+            كشري الغباشي
           </Link>
           <Link to="/menu" className="btn btn-ghost">
             المنيو

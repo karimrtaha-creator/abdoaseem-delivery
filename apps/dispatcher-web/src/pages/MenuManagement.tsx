@@ -23,6 +23,7 @@ export function MenuManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const [descriptionDrafts, setDescriptionDrafts] = useState<Record<number, string>>({});
   const [savingDescriptionId, setSavingDescriptionId] = useState<number | null>(null);
@@ -84,6 +85,27 @@ export function MenuManagement() {
     } finally {
       setUploadingId(null);
     }
+  }
+
+  async function deleteItem(item: MenuItem) {
+    if (!confirm(`حذف "${item.name}" نهائيًا؟ الخطوة دي مش قابلة للتراجع.`)) return;
+    setError(null);
+    setDeletingId(item.id);
+    const { error: deleteError } = await supabase.from("menu_items").delete().eq("id", item.id);
+    setDeletingId(null);
+    if (deleteError) {
+      // 23503 = Postgres foreign-key violation - this item was actually
+      // ordered before, so order_items still points at it and the delete
+      // is correctly refused rather than silently orphaning real order
+      // history.
+      if (deleteError.code === "23503") {
+        setError(`"${item.name}" اتطلب قبل كده في أوردرات حقيقية - مينفعش يتمسح نهائي، تقدر تخليه غير متاح بدل ما تمسحه`);
+      } else {
+        setError(deleteError.message);
+      }
+      return;
+    }
+    setItems((prev) => prev.filter((i) => i.id !== item.id));
   }
 
   async function removePhoto(item: MenuItem) {
@@ -196,6 +218,14 @@ export function MenuManagement() {
                     <strong>{item.name}</strong>
                     <span className="muted">{item.price} ج{!item.is_available && " - مخفي من المنيو"}</span>
                   </div>
+                  <button
+                    className="btn-danger btn-sm"
+                    style={{ alignSelf: "flex-start" }}
+                    disabled={deletingId === item.id}
+                    onClick={() => deleteItem(item)}
+                  >
+                    {deletingId === item.id ? "جاري الحذف..." : "حذف نهائي"}
+                  </button>
                   {item.image_url ? (
                     <img
                       src={item.image_url}

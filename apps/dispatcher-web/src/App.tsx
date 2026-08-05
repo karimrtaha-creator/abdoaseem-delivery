@@ -13,6 +13,7 @@ import { Complaints } from "./pages/Complaints";
 import { BranchManagement } from "./pages/BranchManagement";
 import { MenuManagement } from "./pages/MenuManagement";
 import { MenuAvailability } from "./pages/MenuAvailability";
+import { BusinessHours } from "./pages/BusinessHours";
 
 type TabKey =
   | "dispatch"
@@ -24,7 +25,8 @@ type TabKey =
   | "complaints"
   | "branches"
   | "menu_photos"
-  | "menu_availability";
+  | "menu_availability"
+  | "business_hours";
 
 const ROLE_TITLES: Record<string, string> = {
   dispatcher: "ديسباتشر",
@@ -41,7 +43,10 @@ const ROLE_TITLES: Record<string, string> = {
 const TABS_BY_ROLE: Record<string, { key: TabKey; label: string }[]> = {
   dispatcher: [{ key: "dispatch", label: "الأوردرات" }],
   call_center: [{ key: "call_center", label: "أوردر جديد" }],
-  team_leader: [{ key: "acceptance", label: "قبول الأوردرات" }],
+  team_leader: [
+    { key: "acceptance", label: "قبول الأوردرات" },
+    { key: "business_hours", label: "مواعيد العمل" },
+  ],
   general_manager: [
     { key: "dashboard", label: "لوحة المتابعة" },
     { key: "acceptance", label: "قبول الأوردرات" },
@@ -51,6 +56,7 @@ const TABS_BY_ROLE: Record<string, { key: TabKey; label: string }[]> = {
     { key: "branches", label: "الفروع والمناطق" },
     { key: "menu_photos", label: "صور المنتجات" },
     { key: "menu_availability", label: "إقفال الأصناف" },
+    { key: "business_hours", label: "مواعيد العمل" },
   ],
   regional_manager: [
     { key: "dashboard", label: "لوحة المتابعة" },
@@ -90,8 +96,24 @@ function ScreenFor({ tab, profile }: { tab: TabKey; profile: Profile }) {
       return <MenuManagement />;
     case "menu_availability":
       return <MenuAvailability profile={profile} />;
+    case "business_hours":
+      return <BusinessHours profile={profile} />;
   }
 }
+
+const TAB_TITLES: Record<TabKey, string> = {
+  dispatch: "الأوردرات",
+  call_center: "أوردر جديد",
+  acceptance: "قبول الأوردرات",
+  users: "إدارة المستخدمين",
+  dashboard: "لوحة المتابعة",
+  performance: "أداء الطيارين",
+  complaints: "الشكاوى",
+  branches: "الفروع والمناطق",
+  menu_photos: "صور المنتجات",
+  menu_availability: "إقفال الأصناف",
+  business_hours: "مواعيد العمل",
+};
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -147,18 +169,40 @@ export default function App() {
   }
 
   const currentTab = activeTab && tabs.some((t) => t.key === activeTab) ? activeTab : tabs[0].key;
+  const hasNav = tabs.length > 1;
 
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <h1>
-          {ROLE_TITLES[profile.role] ?? profile.role} - {profile.name}
-        </h1>
-        <button className="btn-link" onClick={() => supabase.auth.signOut()}>
-          تسجيل خروج
-        </button>
-      </header>
-      {tabs.length > 1 && (
+      <aside className={`sidebar${hasNav ? "" : " sidebar-no-nav"}`}>
+        <div className="sidebar-brand">
+          <span className="sidebar-brand-name">كشري الغباشي</span>
+          <span className="sidebar-brand-caption">بوابة الموظفين</span>
+        </div>
+        <div className="sidebar-role">
+          <span className="sidebar-role-name">{profile.name}</span>
+          <span className="sidebar-role-title">{ROLE_TITLES[profile.role] ?? profile.role}</span>
+        </div>
+        {hasNav && (
+          <nav className="sidebar-nav">
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                className={`sidebar-nav-item${t.key === currentTab ? " sidebar-nav-item-active" : ""}`}
+                onClick={() => setActiveTab(t.key)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
+        )}
+        <div className="sidebar-footer">
+          <button className="btn-link" onClick={() => supabase.auth.signOut()}>
+            تسجيل خروج
+          </button>
+        </div>
+      </aside>
+
+      {hasNav && (
         <nav className="tab-bar">
           {tabs.map((t) => (
             <button
@@ -171,8 +215,21 @@ export default function App() {
           ))}
         </nav>
       )}
-      <main>
-        <ScreenFor tab={currentTab} profile={profile} />
+
+      <main className="content">
+        <div className="content-header">
+          <h1>{TAB_TITLES[currentTab]}</h1>
+        </div>
+        {/* Every accessible tab stays mounted and is only CSS-hidden when
+            inactive, instead of being unmounted by conditional rendering -
+            switching tabs used to wipe any in-progress typing (e.g. a
+            half-filled "add employee" form) because React tears the
+            previous screen down entirely on every switch. */}
+        {tabs.map((t) => (
+          <div key={t.key} className={`tab-panel${t.key === currentTab ? " tab-panel-active" : ""}`}>
+            <ScreenFor tab={t.key} profile={profile} />
+          </div>
+        ))}
       </main>
     </div>
   );

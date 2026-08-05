@@ -64,12 +64,21 @@ export function UserManagement({ profile }: { profile: Profile }) {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [regions, setRegions] = useState<Region[]>([]);
   const [loading, setLoading] = useState(true);
+  // Ids of inactive staff who have real order/complaint/rating/closure
+  // history - checked with a lightweight existence query rather than
+  // discovering it by letting delete-user reject the call, so the button
+  // can be disabled with an explanation up front instead of erroring out.
+  const [historyUserIds, setHistoryUserIds] = useState<Set<string>>(new Set());
 
   const creatableRoles = useMemo(() => creatableRolesFor(profile.role), [profile.role]);
   const ownRegionBranches = useMemo(
     () => branches.filter((b) => b.region_id === profile.region_id),
     [branches, profile.region_id],
   );
+  const branchName = useMemo(() => {
+    const map = new Map(branches.map((b) => [b.id, b.name]));
+    return (id: number | null) => (id ? map.get(id) ?? `فرع #${id}` : "-");
+  }, [branches]);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -79,7 +88,8 @@ export function UserManagement({ profile }: { profile: Profile }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastCreated, setLastCreated] = useState<{ phone: string; password: string } | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [resetPasswordResult, setResetPasswordResult] = useState<{ phone: string; password: string } | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
 
   async function loadStaff() {
     const { data } = await supabase
@@ -87,8 +97,34 @@ export function UserManagement({ profile }: { profile: Profile }) {
       .select("id, name, phone, role, branch_id, region_id, is_active")
       .neq("role", "customer")
       .order("name");
-    setStaff((data as StaffUser[]) ?? []);
+    const rows = (data as StaffUser[]) ?? [];
+    setStaff(rows);
     setLoading(false);
+
+    const inactiveIds = rows.filter((u) => !u.is_active).map((u) => u.id);
+    if (inactiveIds.length === 0) {
+      setHistoryUserIds(new Set());
+      return;
+    }
+    const orClause = inactiveIds
+      .flatMap((id) => [`driver_id.eq.${id}`, `dispatcher_id.eq.${id}`, `accepted_by.eq.${id}`, `cancelled_by.eq.${id}`])
+      .join(",");
+    const [ordersRes, complaintsRes, ratingsRes, closuresRes] = await Promise.all([
+      supabase.from("orders").select("driver_id, dispatcher_id, accepted_by, cancelled_by").or(orClause),
+      supabase.from("complaints").select("driver_id").in("driver_id", inactiveIds),
+      supabase.from("order_ratings").select("customer_id").in("customer_id", inactiveIds),
+      supabase.from("menu_item_branch_closures").select("closed_by").in("closed_by", inactiveIds),
+    ]);
+    const withHistory = new Set<string>();
+    for (const o of ordersRes.data ?? []) {
+      for (const id of [o.driver_id, o.dispatcher_id, o.accepted_by, o.cancelled_by]) {
+        if (id) withHistory.add(id);
+      }
+    }
+    for (const c of complaintsRes.data ?? []) if (c.driver_id) withHistory.add(c.driver_id);
+    for (const r of ratingsRes.data ?? []) if (r.customer_id) withHistory.add(r.customer_id);
+    for (const cl of closuresRes.data ?? []) if (cl.closed_by) withHistory.add(cl.closed_by);
+    setHistoryUserIds(withHistory);
   }
 
   useEffect(() => {
@@ -147,7 +183,7 @@ export function UserManagement({ profile }: { profile: Profile }) {
 
   async function deactivate(userId: string, userName: string) {
     if (!confirm(`متأكد إنك عايز توقف حساب "${userName}"؟`)) return;
-    setBusyId(userId);
+    setBusyKey(`deactivate-${userId}`);
     setError(null);
     try {
       await callFunction("deactivate-user", { user_id: userId });
@@ -155,7 +191,50 @@ export function UserManagement({ profile }: { profile: Profile }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "فشل إيقاف الحساب");
     } finally {
-      setBusyId(null);
+      setBusyKey(null);
+    }
+  }
+
+  async function reactivate(userId: string, userName: string) {
+    if (!confirm(`ترجّع حساب "${userName}" يشتغل تاني؟`)) return;
+    setBusyKey(`reactivate-${userId}`);
+    setError(null);
+    try {
+      await callFunction("reactivate-user", { user_id: userId });
+      loadStaff();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "فشل إعادة تفعيل الحساب");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function resetPassword(userId: string, userName: string) {
+    if (!confirm(`تغيّر باسورد "${userName}"؟ الباسورد القديم هيبقى مش شغال.`)) return;
+    setBusyKey(`reset-${userId}`);
+    setError(null);
+    setResetPasswordResult(null);
+    try {
+      const res = await callFunction<{ phone: string; new_password: string }>("reset-user-password", { user_id: userId });
+      setResetPasswordResult({ phone: res.phone, password: res.new_password });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "فشل تغيير الباسورد");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function deleteUser(userId: string, userName: string) {
+    if (!confirm(`حذف حساب "${userName}" نهائيًا؟ الخطوة دي مش قابلة للتراجع.`)) return;
+    setBusyKey(`delete-${userId}`);
+    setError(null);
+    try {
+      await callFunction("delete-user", { user_id: userId });
+      loadStaff();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "فشل حذف الحساب");
+    } finally {
+      setBusyKey(null);
     }
   }
 
@@ -177,6 +256,22 @@ export function UserManagement({ profile }: { profile: Profile }) {
               انسخه وابعته للموظف دلوقتي — مش هيتعرض تاني.
             </p>
             <button className="btn-link" onClick={() => setLastCreated(null)}>
+              تمام، قفلت
+            </button>
+          </div>
+        )}
+
+        {resetPasswordResult && (
+          <div className="success-banner card">
+            <p>
+              اتغير باسورد <strong>{resetPasswordResult.phone}</strong>.
+            </p>
+            <p className="error-text">
+              الباسورد الجديد: <strong>{resetPasswordResult.password}</strong>
+              <br />
+              انسخه وابعته للموظف دلوقتي — مش هيتعرض تاني.
+            </p>
+            <button className="btn-link" onClick={() => setResetPasswordResult(null)}>
               تمام، قفلت
             </button>
           </div>
@@ -254,23 +349,67 @@ export function UserManagement({ profile }: { profile: Profile }) {
 
       <div className="card">
         <h2>الموظفين ({staff.length})</h2>
-        <div className="order-list">
-          {staff.map((u) => (
-            <div key={u.id} className="order-row" style={{ cursor: "default" }}>
-              <span className="order-row-id">
-                {u.name}
-                {!u.is_active && <span className="badge-delayed">موقوف</span>}
-              </span>
-              <span className="muted">
-                {ROLE_LABELS[u.role] ?? u.role} - {u.phone}
-              </span>
-              {u.is_active && u.id !== profile.id && (
-                <button className="btn-danger" disabled={busyId === u.id} onClick={() => deactivate(u.id, u.name)}>
-                  إيقاف
-                </button>
-              )}
-            </div>
-          ))}
+        <div className="data-table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>الاسم</th>
+                <th>الدور</th>
+                <th>التليفون</th>
+                <th>الفرع</th>
+                <th>الحالة</th>
+                <th>إجراءات</th>
+              </tr>
+            </thead>
+            <tbody>
+              {staff.map((u) => {
+                const isSelf = u.id === profile.id;
+                const blockedByHistory = !u.is_active && historyUserIds.has(u.id);
+                return (
+                  <tr key={u.id}>
+                    <td>{u.name}</td>
+                    <td>{ROLE_LABELS[u.role] ?? u.role}</td>
+                    <td className="num-cell">{u.phone}</td>
+                    <td>{branchName(u.branch_id)}</td>
+                    <td>
+                      <span className={u.is_active ? "badge-active" : "badge-inactive"}>
+                        {u.is_active ? "شغال" : "موقوف"}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="actions-cell">
+                        {!isSelf && (
+                          <button className="btn-sm btn-link" disabled={busyKey === `reset-${u.id}`} onClick={() => resetPassword(u.id, u.name)}>
+                            تغيير الباسورد
+                          </button>
+                        )}
+                        {u.is_active && !isSelf && (
+                          <button className="btn-sm btn-danger" disabled={busyKey === `deactivate-${u.id}`} onClick={() => deactivate(u.id, u.name)}>
+                            إيقاف
+                          </button>
+                        )}
+                        {!u.is_active && (
+                          <button className="btn-sm btn-primary" disabled={busyKey === `reactivate-${u.id}`} onClick={() => reactivate(u.id, u.name)}>
+                            إعادة التفعيل
+                          </button>
+                        )}
+                        {!u.is_active && (
+                          <button
+                            className="btn-sm btn-danger"
+                            disabled={busyKey === `delete-${u.id}` || blockedByHistory}
+                            title={blockedByHistory ? "الحساب ده ليه أوردرات/شكاوى مرتبطة بيه، فمش ممكن حذفه نهائيًا - يفضل موقوف بس" : undefined}
+                            onClick={() => deleteUser(u.id, u.name)}
+                          >
+                            حذف
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

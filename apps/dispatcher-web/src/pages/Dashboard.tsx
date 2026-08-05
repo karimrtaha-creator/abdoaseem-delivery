@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { supabase } from "../supabaseClient";
 import type { Profile } from "../lib/useProfile";
+import { CHART_COLORS } from "../lib/chartColors";
 
 interface OrderRow {
   id: number;
@@ -210,17 +212,49 @@ export function Dashboard({ profile }: { profile: Profile }) {
       </div>
 
       {focusBranchId === "all" && scopedBranches.length > 1 && (
-        <div className="card">
+        <div className="card chart-card">
           <h2>توزيع الفروع</h2>
-          <div className="order-list">
-            {perBranch.map(({ branch, ongoing, delayed, deliveredToday }) => (
-              <div key={branch.id} className="order-row" style={{ cursor: "default" }}>
-                <span className="order-row-id">{branch.name}</span>
-                <span className="muted">جارية: {ongoing}</span>
-                <span className={delayed > 0 ? "error-text" : "muted"}>متأخرة: {delayed}</span>
-                <span className="muted">اتسلمت: {deliveredToday}</span>
-              </div>
-            ))}
+          <div className="chart-wrap">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={perBranch.map((p) => ({ name: p.branch.name, جارية: p.ongoing, متأخرة: p.delayed, اتسلمت: p.deliveredToday }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: "Cairo" }} interval={0} angle={-25} textAnchor="end" height={70} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fontFamily: "Cairo" }} />
+                <Tooltip contentStyle={{ fontFamily: "Cairo", direction: "rtl" }} />
+                <Legend wrapperStyle={{ fontFamily: "Cairo", fontSize: 12 }} />
+                {/* isAnimationActive=false: react-smooth's bar-grow animation relies
+                    on requestAnimationFrame, which some environments throttle or
+                    never fire for background/unfocused tabs - when that happens the
+                    bar gets stuck on its zero-height first frame and never paints.
+                    Disabling the animation renders the final shape immediately. */}
+                <Bar dataKey="جارية" fill={CHART_COLORS[2]} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                <Bar dataKey="متأخرة" fill={CHART_COLORS[0]} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                <Bar dataKey="اتسلمت" fill={CHART_COLORS[1]} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="data-table-wrap" style={{ marginTop: "var(--space-3)" }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>الفرع</th>
+                  <th>جارية</th>
+                  <th>متأخرة</th>
+                  <th>اتسلمت النهاردة</th>
+                </tr>
+              </thead>
+              <tbody>
+                {perBranch.map(({ branch, ongoing, delayed, deliveredToday }) => (
+                  <tr key={branch.id}>
+                    <td>{branch.name}</td>
+                    <td className="num-cell">{ongoing}</td>
+                    <td className={`num-cell${delayed > 0 ? " error-text" : ""}`}>{delayed}</td>
+                    <td className="num-cell">{deliveredToday}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

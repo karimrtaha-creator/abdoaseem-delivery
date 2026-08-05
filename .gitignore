@@ -11,6 +11,7 @@ dist/
 build/
 .vite/
 *.local
+*.tsbuildinfo
 
 # Flutter / Dart
 apps/driver_app/.dart_tool/

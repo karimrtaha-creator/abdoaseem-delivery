@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 import { useAuth } from "../lib/AuthContext";
 import { ORDER_STATUS_LABELS, ORDER_STATUS_STEPS, OrderStatus } from "../lib/orderStatus";
+
+const WHATSAPP_HELP_URL = "https://wa.me/201224444219?text=" + encodeURIComponent("عندي استفسار عن طلبي");
 
 interface OrderItemRow {
   id: number;
@@ -17,6 +19,7 @@ interface OrderRow {
   status: OrderStatus;
   order_time: string;
   is_delayed: boolean | null;
+  cancellation_reason: string | null;
   branches: { name: string } | null;
   order_items: OrderItemRow[];
 }
@@ -25,6 +28,7 @@ export function Orders() {
   const { session, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [ratedOrderIds, setRatedOrderIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -33,14 +37,18 @@ export function Orders() {
 
   async function load() {
     if (!session) return;
-    const { data } = await supabase
-      .from("orders")
-      .select(
-        "id, status, order_time, is_delayed, branches(name), order_items(id, quantity, unit_price, combo_selection, menu_items(name), combo_offers(name))",
-      )
-      .eq("customer_id", session.user.id)
-      .order("order_time", { ascending: false });
-    setOrders((data as unknown as OrderRow[]) ?? []);
+    const [ordersRes, ratingsRes] = await Promise.all([
+      supabase
+        .from("orders")
+        .select(
+          "id, status, order_time, is_delayed, cancellation_reason, branches(name), order_items(id, quantity, unit_price, combo_selection, menu_items(name), combo_offers(name))",
+        )
+        .eq("customer_id", session.user.id)
+        .order("order_time", { ascending: false }),
+      supabase.from("order_ratings").select("order_id").eq("customer_id", session.user.id),
+    ]);
+    setOrders((ordersRes.data as unknown as OrderRow[]) ?? []);
+    setRatedOrderIds(new Set(((ratingsRes.data as { order_id: number }[]) ?? []).map((r) => r.order_id)));
     setLoading(false);
   }
 
@@ -75,11 +83,16 @@ export function Orders() {
       <header className="site-header">
         <div className="wrap">
           <Link to="/" className="brand" style={{ textDecoration: "none" }}>
-            ABDO ASEEM
+            كشري الغباشي
           </Link>
-          <Link to="/menu" className="btn btn-ghost">
-            المنيو
-          </Link>
+          <div className="user-chip">
+            <a className="btn-link" href={WHATSAPP_HELP_URL} target="_blank" rel="noreferrer">
+              مركز المساعدة
+            </a>
+            <Link to="/menu" className="btn btn-ghost">
+              المنيو
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -90,7 +103,7 @@ export function Orders() {
 
         <div className="orders-list">
           {orders.map((order) => (
-            <OrderCard key={order.id} order={order} />
+            <OrderCard key={order.id} order={order} alreadyRated={ratedOrderIds.has(order.id)} onChanged={load} />
           ))}
         </div>
       </div>
@@ -98,7 +111,15 @@ export function Orders() {
   );
 }
 
-function OrderCard({ order }: { order: OrderRow }) {
+function OrderCard({
+  order,
+  alreadyRated,
+  onChanged,
+}: {
+  order: OrderRow;
+  alreadyRated: boolean;
+  onChanged: () => void;
+}) {
   const total = useMemo(
     () => order.order_items.reduce((sum, i) => sum + i.unit_price * i.quantity, 0),
     [order.order_items],
@@ -106,6 +127,7 @@ function OrderCard({ order }: { order: OrderRow }) {
   const isTerminalIssue = order.status === "cancelled" || order.status === "rejected";
   const currentStepIndex = ORDER_STATUS_STEPS.indexOf(order.status);
   const showOtp = order.status === "out_for_delivery" || order.status === "delayed";
+  const canCancel = order.status === "pending_acceptance";
 
   return (
     <div className="card order-card">
@@ -128,6 +150,9 @@ function OrderCard({ order }: { order: OrderRow }) {
         <p className="error-text">{ORDER_STATUS_LABELS[order.status]}</p>
       )}
 
+      {order.status === "cancelled" && order.cancellation_reason && (
+        <p className="muted">سبب الإلغاء: {order.cancellation_reason}</p>
+      )}
       {order.status === "delayed" && <p className="error-text">الطلب متأخر شوية عن المتوقع، هيوصلك في أقرب وقت</p>}
 
       {showOtp && <DeliveryOtp orderId={order.id} />}
@@ -149,6 +174,121 @@ function OrderCard({ order }: { order: OrderRow }) {
           <strong>{total} ج</strong>
         </div>
       </div>
+
+      {canCancel && <CancelOrder orderId={order.id} onCancelled={onChanged} />}
+      {order.status === "delivered" && <RateOrder orderId={order.id} alreadyRated={alreadyRated} onRated={onChanged} />}
+    </div>
+  );
+}
+
+function CancelOrder({ orderId, onCancelled }: { orderId: number; onCancelled: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!reason.trim()) return setError("اكتب سبب الإلغاء");
+    setError(null);
+    setSubmitting(true);
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    const { error: fnError } = await supabase.functions.invoke("cancel-order", {
+      body: { order_id: orderId, reason: reason.trim() },
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    setSubmitting(false);
+    if (fnError) {
+      setError("مقدرناش نلغي الطلب - جرب تاني أو كلمنا على 19860");
+      return;
+    }
+    setOpen(false);
+    onCancelled();
+  }
+
+  if (!open) {
+    return (
+      <button className="btn-link" style={{ marginTop: "var(--space-2)", color: "var(--color-alert)" }} onClick={() => setOpen(true)}>
+        إلغاء الأوردر
+      </button>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} style={{ marginTop: "var(--space-2)" }}>
+      <div className="field">
+        <label htmlFor={`cancel-reason-${orderId}`}>سبب الإلغاء</label>
+        <input
+          id={`cancel-reason-${orderId}`}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="ليه عايز تلغي الأوردر؟"
+        />
+      </div>
+      {error && <span className="error-text">{error}</span>}
+      <div className="inline-row" style={{ marginTop: "4px" }}>
+        <button className="btn btn-primary" type="submit" disabled={submitting}>
+          {submitting ? "جاري الإلغاء..." : "تأكيد الإلغاء"}
+        </button>
+        <button className="btn-link" type="button" onClick={() => setOpen(false)}>
+          رجوع
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function RateOrder({ orderId, alreadyRated, onRated }: { orderId: number; alreadyRated: boolean; onRated: () => void }) {
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (alreadyRated) {
+    return <p className="muted" style={{ marginTop: "var(--space-2)" }}>شكرًا على تقييمك للطلب ده</p>;
+  }
+
+  async function submit() {
+    if (rating === 0) return setError("اختار عدد النجوم");
+    setError(null);
+    setSubmitting(true);
+    const { data: sessionData } = await supabase.auth.getSession();
+    const userId = sessionData.session?.user.id;
+    const { error: insertError } = await supabase
+      .from("order_ratings")
+      .insert({ order_id: orderId, customer_id: userId, rating, comment: comment.trim() || null });
+    setSubmitting(false);
+    if (insertError) {
+      setError("مقدرناش نسجل التقييم - جرب تاني");
+      return;
+    }
+    onRated();
+  }
+
+  return (
+    <div style={{ marginTop: "var(--space-2)" }}>
+      <p className="muted">قيّم الأوردر والسائق</p>
+      <div className="star-picker">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            className={`star-btn${n <= rating ? " filled" : ""}`}
+            onClick={() => setRating(n)}
+            aria-label={`${n} نجوم`}
+          >
+            ★
+          </button>
+        ))}
+      </div>
+      <div className="field">
+        <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="أي تعليق؟ (اختياري)" />
+      </div>
+      {error && <span className="error-text">{error}</span>}
+      <button className="btn btn-primary" onClick={submit} disabled={submitting}>
+        {submitting ? "جاري الإرسال..." : "إرسال التقييم"}
+      </button>
     </div>
   );
 }

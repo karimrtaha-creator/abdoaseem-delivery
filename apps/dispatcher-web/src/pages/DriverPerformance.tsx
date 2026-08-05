@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { supabase } from "../supabaseClient";
 import type { Profile } from "../lib/useProfile";
+import { CHART_COLORS } from "../lib/chartColors";
 
 interface DriverRow {
   id: string;
@@ -60,23 +62,57 @@ export function DriverPerformance({ profile }: { profile: Profile }) {
 
   if (loading) return <p className="muted">جاري التحميل...</p>;
 
+  const chartData = stats
+    .filter((s) => s.avgMinutes != null)
+    .map((s) => ({ name: s.driver.name, "متوسط التوصيل (د)": s.avgMinutes as number }));
+
   return (
-    <div className="card">
+    <div className="card chart-card">
       <h2>أداء الطيارين ({stats.length})</h2>
       {stats.length === 0 && <p className="muted">مفيش طيارين ضمن نطاقك.</p>}
-      <div className="order-list">
-        {stats.map(({ driver, deliveredCount, avgMinutes, delayedCount }) => (
-          <div key={driver.id} className="order-row" style={{ cursor: "default" }}>
-            <span className="order-row-id">
-              {driver.name}
-              {!driver.is_active && <span className="badge-delayed">موقوف</span>}
-            </span>
-            <span className="muted">عدد الأوردرات: {deliveredCount}</span>
-            <span className="muted">متوسط التوصيل: {avgMinutes != null ? `${avgMinutes} د` : "-"}</span>
-            <span className={delayedCount > 0 ? "error-text" : "muted"}>مرات التأخير: {delayedCount}</span>
-          </div>
-        ))}
-      </div>
+
+      {chartData.length > 0 && (
+        <div className="chart-wrap">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: "Cairo" }} interval={0} angle={-25} textAnchor="end" height={70} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11, fontFamily: "Cairo" }} />
+              <Tooltip contentStyle={{ fontFamily: "Cairo", direction: "rtl" }} />
+              <Bar dataKey="متوسط التوصيل (د)" fill={CHART_COLORS[2]} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {stats.length > 0 && (
+        <div className="data-table-wrap" style={{ marginTop: "var(--space-3)" }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>الطيار</th>
+                <th>عدد الأوردرات</th>
+                <th>متوسط التوصيل</th>
+                <th>مرات التأخير</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.map(({ driver, deliveredCount, avgMinutes, delayedCount }) => (
+                <tr key={driver.id}>
+                  <td>
+                    {driver.name}
+                    {!driver.is_active && <span className="badge-inactive" style={{ marginRight: 8 }}>موقوف</span>}
+                  </td>
+                  <td className="num-cell">{deliveredCount}</td>
+                  <td className="num-cell">{avgMinutes != null ? `${avgMinutes} د` : "-"}</td>
+                  <td className={`num-cell${delayedCount > 0 ? " error-text" : ""}`}>{delayedCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {profile.role === "general_manager" && (
         <p className="muted" style={{ marginTop: 12 }}>
           بتشوف كل طيارين الشركة (13 فرع).

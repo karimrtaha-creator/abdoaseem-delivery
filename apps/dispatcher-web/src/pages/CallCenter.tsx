@@ -51,6 +51,7 @@ interface CartLine {
   quantity: number;
   comboChoiceOptionIds?: number[];
   comboChoiceLabels?: string[];
+  note?: string;
 }
 
 interface Address {
@@ -69,7 +70,22 @@ async function callFunction<T>(name: string, body: unknown): Promise<T> {
     body: body as any,
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
-  if (error) throw new Error(error.message);
+  if (error) {
+    // FunctionsHttpError.message is a generic "non-2xx status code" string -
+    // the actual server error text only lives in the raw response body via
+    // .context, same as Checkout.tsx's translateServerError path.
+    let serverMessage: string | null = null;
+    const context = (error as { context?: Response }).context;
+    if (context) {
+      try {
+        const responseBody = await context.clone().json();
+        if (typeof responseBody?.error === "string") serverMessage = responseBody.error;
+      } catch {
+        // response body wasn't JSON - fall through to the generic message
+      }
+    }
+    throw new Error(serverMessage ?? error.message);
+  }
   return data as T;
 }
 
@@ -196,6 +212,10 @@ export function CallCenter() {
     );
   }
 
+  function setLineNote(key: string, note: string) {
+    setCart((prev) => prev.map((l) => (l.key === key ? { ...l, note } : l)));
+  }
+
   const cartTotal = useMemo(
     () => cart.reduce((sum, l) => sum + l.unit_price * l.quantity, 0),
     [cart],
@@ -295,6 +315,7 @@ export function CallCenter() {
           combo_offer_id: l.combo_offer_id,
           quantity: l.quantity,
           combo_choice_option_ids: l.comboChoiceOptionIds,
+          note: l.note,
         })),
         payment_method: paymentMethod,
         payment_proof_url: paymentProofUrl,
@@ -303,7 +324,12 @@ export function CallCenter() {
       setSuccessOrderId(res.order_id);
       resetForm();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "فشل إنشاء الأوردر");
+      const message = err instanceof Error ? err.message : "";
+      setError(
+        message.includes("outside business hours")
+          ? "الموقع برا مواعيد استقبال الأوردرات دلوقتي - راجع مواعيد العمل"
+          : message || "فشل إنشاء الأوردر",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -444,21 +470,29 @@ export function CallCenter() {
         <h2>السلة ({cart.length})</h2>
         {cart.length === 0 && <p className="muted">مفيش أصناف لسه</p>}
         {cart.map((line) => (
-          <div key={line.key} className="cart-line">
-            <span>
-              {line.name}
-              {line.comboChoiceLabels && line.comboChoiceLabels.length > 0 && (
-                <span className="muted" style={{ display: "block", fontSize: "0.8rem" }}>
-                  {line.comboChoiceLabels.join(" - ")}
-                </span>
-              )}
-            </span>
-            <span className="cart-qty">
-              <button onClick={() => changeQuantity(line.key, -1)}>-</button>
-              {line.quantity}
-              <button onClick={() => changeQuantity(line.key, 1)}>+</button>
-            </span>
-            <span>{line.unit_price * line.quantity} ج</span>
+          <div key={line.key} className="cart-line-wrap">
+            <div className="cart-line">
+              <span>
+                {line.name}
+                {line.comboChoiceLabels && line.comboChoiceLabels.length > 0 && (
+                  <span className="muted" style={{ display: "block", fontSize: "0.8rem" }}>
+                    {line.comboChoiceLabels.join(" - ")}
+                  </span>
+                )}
+              </span>
+              <span className="cart-qty">
+                <button onClick={() => changeQuantity(line.key, -1)}>-</button>
+                {line.quantity}
+                <button onClick={() => changeQuantity(line.key, 1)}>+</button>
+              </span>
+              <span>{line.unit_price * line.quantity} ج</span>
+            </div>
+            <input
+              className="cart-line-note"
+              placeholder="ملاحظة على الصنف ده (اختياري)"
+              value={line.note ?? ""}
+              onChange={(e) => setLineNote(line.key, e.target.value)}
+            />
           </div>
         ))}
         {cart.length > 0 && <p className="cart-total">الإجمالي: {cartTotal} ج</p>}

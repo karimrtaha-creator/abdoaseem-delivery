@@ -141,27 +141,35 @@ export function MenuAvailability({ profile }: { profile: Profile }) {
         return (
           <div key={category.id} className="card">
             <h2>{category.name}</h2>
-            <div className="order-list">
-              {categoryItems.map((item) => {
-                const isClosed = closedItemIds.has(item.id);
-                return (
-                  <div key={item.id} className="pending-order-card card">
-                    <div className="pending-order-header">
-                      <strong>{item.name}</strong>
-                      <span className={isClosed ? "error-text" : "muted"}>{isClosed ? "مقفول في الفرع ده" : "متاح"}</span>
-                    </div>
-                    <label className="radio-label">
-                      <input
-                        type="checkbox"
-                        checked={!isClosed}
-                        disabled={busyKey === `${item.id}`}
-                        onChange={() => toggleClosed(item, isClosed)}
-                      />
-                      متاح في الفرع ده
-                    </label>
-                  </div>
-                );
-              })}
+            <div className="data-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>الصنف</th>
+                    <th>الحالة</th>
+                    <th>متاح في الفرع ده</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categoryItems.map((item) => {
+                    const isClosed = closedItemIds.has(item.id);
+                    return (
+                      <tr key={item.id}>
+                        <td>{item.name}</td>
+                        <td className={isClosed ? "error-text" : "muted"}>{isClosed ? "مقفول في الفرع ده" : "متاح"}</td>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={!isClosed}
+                            disabled={busyKey === `${item.id}`}
+                            onChange={() => toggleClosed(item, isClosed)}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         );

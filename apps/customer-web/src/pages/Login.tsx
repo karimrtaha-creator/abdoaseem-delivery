@@ -58,7 +58,7 @@ export function Login() {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <h1>ABDO ASEEM</h1>
+        <h1>كشري الغباشي</h1>
         <p className="muted">{mode === "signin" ? "سجّل دخول علشان تكمّل طلبك" : "اعمل حساب جديد"}</p>
 
         <div className="auth-toggle">

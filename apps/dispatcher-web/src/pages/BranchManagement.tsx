@@ -224,105 +224,128 @@ export function BranchManagement() {
 
       <div className="card">
         <h2>المناطق ({regions.length})</h2>
-        <div className="order-list">
-          {regions.map((r) => {
-            const manager = regionManagerOf.get(r.id);
-            return (
-              <div key={r.id} className="pending-order-card card">
-                <div className="pending-order-header">
-                  <strong>{r.name}</strong>
-                  <span className="muted">{manager ? `مدير المنطقة: ${manager.name}` : "مفيش مدير منطقة معيّن"}</span>
-                </div>
-                <div className="inline-row">
-                  <select
-                    value={pickRegionManager[r.id] ?? ""}
-                    onChange={(e) => setPickRegionManager({ ...pickRegionManager, [r.id]: e.target.value })}
-                  >
-                    <option value="">-- اختر موظف --</option>
-                    {staff.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name} ({u.phone})
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    className="btn-primary"
-                    disabled={busyKey === `region-${r.id}` || !pickRegionManager[r.id]}
-                    onClick={() => assignRegionManager(r.id)}
-                  >
-                    تعيين كمدير منطقة
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+        <div className="data-table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>المنطقة</th>
+                <th>مدير المنطقة</th>
+                <th>تعيين مدير</th>
+              </tr>
+            </thead>
+            <tbody>
+              {regions.map((r) => {
+                const manager = regionManagerOf.get(r.id);
+                return (
+                  <tr key={r.id}>
+                    <td>{r.name}</td>
+                    <td className={manager ? undefined : "muted"}>{manager ? manager.name : "مفيش مدير معيّن"}</td>
+                    <td>
+                      <div className="actions-cell">
+                        <select
+                          value={pickRegionManager[r.id] ?? ""}
+                          onChange={(e) => setPickRegionManager({ ...pickRegionManager, [r.id]: e.target.value })}
+                        >
+                          <option value="">-- اختر موظف --</option>
+                          {staff.map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.name} ({u.phone})
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="btn-sm btn-primary"
+                          disabled={busyKey === `region-${r.id}` || !pickRegionManager[r.id]}
+                          onClick={() => assignRegionManager(r.id)}
+                        >
+                          تعيين
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
       <div className="card">
         <h2>الفروع ({branches.length})</h2>
-        <div className="order-list">
-          {branches.map((b) => {
-            const manager = branchManagerOf.get(b.id);
-            return (
-              <div key={b.id} className="pending-order-card card">
-                <div className="pending-order-header">
-                  <strong>{b.name}</strong>
-                  <span className="muted">{regionName(b.region_id)}</span>
-                </div>
-                <p className="muted">{manager ? `مدير الفرع: ${manager.name}` : "مفيش مدير فرع معيّن"}</p>
-                <label className="radio-label">
-                  <input
-                    type="checkbox"
-                    checked={b.is_delivery_available}
-                    disabled={busyKey === `delivery-${b.id}`}
-                    onChange={() => toggleDelivery(b)}
-                  />
-                  متاح للتوصيل
-                </label>
-                <div className="inline-row">
-                  <label>
-                    رسم التوصيل (ج)
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      style={{ width: "90px" }}
-                      value={feeDrafts[b.id] ?? ""}
-                      onChange={(e) => setFeeDrafts({ ...feeDrafts, [b.id]: e.target.value })}
-                    />
-                  </label>
-                  <button
-                    className="btn-primary"
-                    disabled={busyKey === `fee-${b.id}` || feeDrafts[b.id] === String(b.delivery_fee)}
-                    onClick={() => saveFee(b)}
-                  >
-                    حفظ الرسم
-                  </button>
-                </div>
-                <div className="inline-row">
-                  <select
-                    value={pickBranchManager[b.id] ?? ""}
-                    onChange={(e) => setPickBranchManager({ ...pickBranchManager, [b.id]: e.target.value })}
-                  >
-                    <option value="">-- اختر موظف --</option>
-                    {staff.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name} ({u.phone})
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    className="btn-primary"
-                    disabled={busyKey === `branch-${b.id}` || !pickBranchManager[b.id]}
-                    onClick={() => assignBranchManager(b.id)}
-                  >
-                    تعيين كمدير فرع
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+        <div className="data-table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>الفرع</th>
+                <th>المنطقة</th>
+                <th>مدير الفرع</th>
+                <th>متاح للتوصيل</th>
+                <th>رسم التوصيل</th>
+                <th>تعيين مدير</th>
+              </tr>
+            </thead>
+            <tbody>
+              {branches.map((b) => {
+                const manager = branchManagerOf.get(b.id);
+                return (
+                  <tr key={b.id}>
+                    <td>{b.name}</td>
+                    <td>{regionName(b.region_id)}</td>
+                    <td className={manager ? undefined : "muted"}>{manager ? manager.name : "مفيش مدير معيّن"}</td>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={b.is_delivery_available}
+                        disabled={busyKey === `delivery-${b.id}`}
+                        onChange={() => toggleDelivery(b)}
+                      />
+                    </td>
+                    <td>
+                      <div className="actions-cell">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          style={{ width: "70px" }}
+                          value={feeDrafts[b.id] ?? ""}
+                          onChange={(e) => setFeeDrafts({ ...feeDrafts, [b.id]: e.target.value })}
+                        />
+                        <button
+                          className="btn-sm btn-primary"
+                          disabled={busyKey === `fee-${b.id}` || feeDrafts[b.id] === String(b.delivery_fee)}
+                          onClick={() => saveFee(b)}
+                        >
+                          حفظ
+                        </button>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="actions-cell">
+                        <select
+                          value={pickBranchManager[b.id] ?? ""}
+                          onChange={(e) => setPickBranchManager({ ...pickBranchManager, [b.id]: e.target.value })}
+                        >
+                          <option value="">-- اختر موظف --</option>
+                          {staff.map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.name} ({u.phone})
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="btn-sm btn-primary"
+                          disabled={busyKey === `branch-${b.id}` || !pickBranchManager[b.id]}
+                          onClick={() => assignBranchManager(b.id)}
+                        >
+                          تعيين
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

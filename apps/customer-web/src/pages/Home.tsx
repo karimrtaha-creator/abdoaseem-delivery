@@ -45,7 +45,7 @@ export function Home() {
     <div>
       <header className="site-header">
         <div className="wrap">
-          <span className="brand">ABDO ASEEM</span>
+          <span className="brand">كشري الغباشي</span>
           {profile ? (
             <div className="user-chip">
               <span>أهلاً {profile.name || "بيك"}</span>
@@ -95,7 +95,7 @@ export function Home() {
               style={{ border: "none", overflow: "hidden" }}
               allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
               allowFullScreen
-              title="فيديو عبده عاصم"
+              title="فيديو كشري الغباشي"
             />
           </div>
         </section>

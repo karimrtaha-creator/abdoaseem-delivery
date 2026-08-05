@@ -13,6 +13,9 @@ export interface CartLine {
   // what the cart/checkout UI displays before submitting.
   comboChoiceOptionIds?: number[];
   comboChoiceLabels?: string[];
+  // Free-text note on this specific line ("من غير تقلية" etc.) - set at
+  // checkout, never interpreted client-side, just relayed to create-order.
+  note?: string;
 }
 
 interface CartContextValue {
@@ -21,6 +24,7 @@ interface CartContextValue {
   total: number;
   addLine: (line: Omit<CartLine, "quantity">) => void;
   changeQuantity: (key: string, delta: number) => void;
+  setNote: (key: string, note: string) => void;
   clear: () => void;
 }
 
@@ -59,6 +63,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  function setNote(key: string, note: string) {
+    setLines((prev) => prev.map((l) => (l.key === key ? { ...l, note } : l)));
+  }
+
   function clear() {
     setLines([]);
   }
@@ -67,7 +75,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const total = useMemo(() => lines.reduce((sum, l) => sum + l.unit_price * l.quantity, 0), [lines]);
 
   return (
-    <CartContext.Provider value={{ lines, count, total, addLine, changeQuantity, clear }}>
+    <CartContext.Provider value={{ lines, count, total, addLine, changeQuantity, setNote, clear }}>
       {children}
     </CartContext.Provider>
   );

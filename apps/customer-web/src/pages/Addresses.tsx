@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 import { useAuth } from "../lib/AuthContext";
 import { Branch, CustomerAddress, Region, formatAddressSummary } from "../lib/addressTypes";
@@ -195,17 +195,22 @@ export function Addresses() {
 
   if (tableMissing) {
     return (
-      <div className="wrap section">
-        <h2 className="section-title">عناويني</h2>
-        <p className="error-text">
-          شاشة العناوين محتاجة تحديث في قاعدة البيانات لسه ما اتنفذش. كلم فريق التقنية.
-        </p>
+      <div>
+        <AddressesHeader />
+        <div className="wrap section">
+          <h2 className="section-title">عناويني</h2>
+          <p className="error-text">
+            شاشة العناوين محتاجة تحديث في قاعدة البيانات لسه ما اتنفذش. كلم فريق التقنية.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="wrap section">
+    <div>
+      <AddressesHeader />
+      <div className="wrap section">
       <h2 className="section-title">عناويني</h2>
 
       {!formOpen && (
@@ -339,6 +344,22 @@ export function Addresses() {
           </div>
         </form>
       )}
+      </div>
     </div>
+  );
+}
+
+function AddressesHeader() {
+  return (
+    <header className="site-header">
+      <div className="wrap">
+        <Link to="/" className="brand" style={{ textDecoration: "none" }}>
+          كشري الغباشي
+        </Link>
+        <Link to="/menu" className="btn btn-ghost">
+          رجوع للمنيو
+        </Link>
+      </div>
+    </header>
   );
 }

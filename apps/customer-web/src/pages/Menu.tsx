@@ -53,8 +53,8 @@ interface ExtraApplicability {
 // Keyed by base item name since ids are stable but names read clearer here
 // and this table is tiny/hand-authored either way.
 const UPSELL_SUGGESTIONS: Record<string, string[]> = {
-  "طاجن فراخ": ["إضافة موتزريلا للطاجن", "إضافة فراخ"],
-  "طاجن لحم": ["إضافة موتزريلا للطاجن", "إضافة لحمة"],
+  "طاجن فراخ": ["إضافة فراخ", "طاجن فراخ موتزريلا"],
+  "طاجن لحم": ["إضافة لحمة", "طاجن لحمة موتزريلا"],
 };
 
 export function Menu() {
@@ -67,6 +67,7 @@ export function Menu() {
   const [nearestBranch, setNearestBranch] = useState<{ id: number; name: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<string | null>(null);
   // combo_offer_id -> choice_group_id -> selected option id
   const [comboSelections, setComboSelections] = useState<Record<number, Record<number, number>>>({});
   const cart = useCart();
@@ -161,6 +162,26 @@ export function Menu() {
 
   const itemsByName = useMemo(() => new Map(items.map((i) => [i.name, i])), [items]);
 
+  // Talabat-style tab bar: one tab per non-empty section (combos + each
+  // category that actually has items), selecting a tab shows only that
+  // section instead of one long scroll.
+  const sections = useMemo(() => {
+    const list: { key: string; label: string }[] = [];
+    if (combos.length > 0) list.push({ key: "combos", label: "الكومبوهات" });
+    for (const category of categories) {
+      if ((itemsByCategory.get(category.id) ?? []).length > 0) {
+        list.push({ key: `cat-${category.id}`, label: category.name });
+      }
+    }
+    return list;
+  }, [combos, categories, itemsByCategory]);
+
+  useEffect(() => {
+    if (sections.length > 0 && (!activeSection || !sections.some((s) => s.key === activeSection))) {
+      setActiveSection(sections[0].key);
+    }
+  }, [sections, activeSection]);
+
   const choiceGroupsByCombo = useMemo(() => {
     const map = new Map<number, ComboChoiceGroup[]>();
     for (const group of comboChoiceGroups) {
@@ -250,7 +271,7 @@ export function Menu() {
       <header className="site-header">
         <div className="wrap">
           <Link to="/" className="brand" style={{ textDecoration: "none" }}>
-            ABDO ASEEM
+            كشري الغباشي
           </Link>
           {profile ? (
             <div className="user-chip">
@@ -280,7 +301,21 @@ export function Menu() {
         <h1 style={{ marginTop: "var(--space-4)" }}>المنيو</h1>
         {nearestBranch && <p className="muted">بيتوصلك من فرع {nearestBranch.name}</p>}
 
-        {combos.length > 0 && (
+        {sections.length > 1 && (
+          <nav className="menu-tabs">
+            {sections.map((s) => (
+              <button
+                key={s.key}
+                className={`menu-tab${s.key === activeSection ? " menu-tab-active" : ""}`}
+                onClick={() => setActiveSection(s.key)}
+              >
+                {s.label}
+              </button>
+            ))}
+          </nav>
+        )}
+
+        {activeSection === "combos" && combos.length > 0 && (
           <section className="section" style={{ paddingBlock: "var(--space-4)" }}>
             <h2 className="section-title">الكومبوهات</h2>
             <div className="photo-grid">
@@ -337,6 +372,7 @@ export function Menu() {
         {categories.map((category) => {
           const categoryItems = itemsByCategory.get(category.id) ?? [];
           if (categoryItems.length === 0) return null;
+          if (activeSection !== `cat-${category.id}`) return null;
           return (
             <section key={category.id} className="section" style={{ paddingBlock: "var(--space-4)" }}>
               <h2 className="section-title">{category.name}</h2>

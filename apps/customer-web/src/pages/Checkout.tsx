@@ -16,7 +16,16 @@ const SERVER_ERROR_TRANSLATIONS: Record<string, string> = {
   "items must be a non-empty array": "سلتك فاضية",
 };
 
-function translateServerError(message: string): string {
+function formatHour(time: string): string {
+  const [hStr, mStr] = time.slice(0, 5).split(":");
+  const h = Number(hStr);
+  const period = h < 12 ? "صباحًا" : h < 18 ? "بعد الضهر" : "بعد نص الليل";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return mStr === "00" ? `${h12} ${period}` : `${h12}:${mStr} ${period}`;
+}
+
+function translateServerError(message: string, hoursNote: string | null): string {
+  if (message === "outside business hours" && hoursNote) return hoursNote;
   return SERVER_ERROR_TRANSLATIONS[message] ?? "حصل خطأ وإحنا بنجهز طلبك - جرب تاني أو كلمنا على 19860";
 }
 
@@ -36,6 +45,7 @@ export function Checkout() {
   const [error, setError] = useState<string | null>(null);
   const [successOrderId, setSuccessOrderId] = useState<number | null>(null);
   const [redirectNotice, setRedirectNotice] = useState<{ from: string; to: string } | null>(null);
+  const [hoursNote, setHoursNote] = useState<string | null>(null);
 
   const selectedAddress = useMemo(
     () => addresses.find((a) => a.id === selectedAddressId) ?? null,
@@ -50,6 +60,18 @@ export function Checkout() {
   useEffect(() => {
     if (!authLoading && !session) navigate("/login");
   }, [authLoading, session, navigate]);
+
+  useEffect(() => {
+    supabase
+      .from("business_hours")
+      .select("opens_at, closes_at")
+      .eq("id", 1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!data) return;
+        setHoursNote(`الموقع بيستقبل أوردرات من ${formatHour(data.opens_at)} لحد ${formatHour(data.closes_at)} بس`);
+      });
+  }, []);
 
   useEffect(() => {
     if (!session) return;
@@ -100,6 +122,7 @@ export function Checkout() {
             combo_offer_id: l.combo_offer_id,
             quantity: l.quantity,
             combo_choice_option_ids: l.comboChoiceOptionIds,
+            note: l.note,
           })),
           payment_method: paymentMethod,
           payment_proof_url: paymentProofUrl,
@@ -122,7 +145,9 @@ export function Checkout() {
             // response body wasn't JSON - fall through to the generic message
           }
         }
-        throw new Error(serverMessage ? translateServerError(serverMessage) : translateServerError(""));
+        throw new Error(
+          serverMessage ? translateServerError(serverMessage, hoursNote) : translateServerError("", hoursNote),
+        );
       }
 
       const result = data as {
@@ -217,6 +242,12 @@ export function Checkout() {
             {line.comboChoiceLabels && line.comboChoiceLabels.length > 0 && (
               <p className="muted checkout-line-choices">{line.comboChoiceLabels.join(" - ")}</p>
             )}
+            <input
+              className="checkout-line-note"
+              placeholder="ملاحظة على الصنف ده (اختياري) - زي: من غير تقلية"
+              value={line.note ?? ""}
+              onChange={(e) => cart.setNote(line.key, e.target.value)}
+            />
           </div>
         ))}
         <div className="checkout-line">

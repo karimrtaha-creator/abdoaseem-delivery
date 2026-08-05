@@ -12,6 +12,30 @@ interface CartItem {
   combo_offer_id?: number;
   quantity: number;
   combo_choice_option_ids?: number[];
+  note?: string;
+}
+
+// Cairo-local "HH:MM" for the current instant - the server itself runs in
+// UTC, and Egypt's offset isn't hardcoded here on purpose (DST history has
+// been inconsistent), so this always asks the platform for the real
+// current offset instead of assuming one.
+function nowInCairo(): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Cairo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date());
+}
+
+// The configured window can wrap midnight (e.g. opens 08:00, closes 03:00
+// the next day), so "open" isn't a simple opens <= now <= closes range -
+// when closes < opens, the closed period is the short gap between them.
+function isWithinBusinessHours(nowHHMM: string, opensAt: string, closesAt: string): boolean {
+  const opens = opensAt.slice(0, 5);
+  const closes = closesAt.slice(0, 5);
+  if (closes < opens) return nowHHMM >= opens || nowHHMM < closes;
+  return nowHHMM >= opens && nowHHMM < closes;
 }
 
 interface CreateOrderBody {
@@ -88,9 +112,14 @@ async function finishOrder(
     quantity: number;
     unit_price: number;
     combo_selection: string | null;
+    note: string | null;
   }[] = [];
 
   for (const item of args.items) {
+    // Free text, never interpreted - just capped so nobody can stuff an
+    // essay into a single order line.
+    const note = item.note?.trim().slice(0, 200) || null;
+
     if (item.menu_item_id != null) {
       const found = menuItemPrices.get(item.menu_item_id);
       if (!found) return errorResponse(`menu_item_id ${item.menu_item_id} not found`, 422);
@@ -101,6 +130,7 @@ async function finishOrder(
         quantity: item.quantity,
         unit_price: found.price,
         combo_selection: null,
+        note,
       });
     } else {
       const found = comboPrices.get(item.combo_offer_id as number);
@@ -128,6 +158,7 @@ async function finishOrder(
         quantity: item.quantity,
         unit_price: found.price,
         combo_selection: comboSelection,
+        note,
       });
     }
   }
@@ -217,6 +248,19 @@ Deno.serve(async (req) => {
   }
 
   const admin = getAdminClient();
+
+  // Applies to both the customer self-checkout path and the call_center
+  // phone-order path - the owner wants the site closed to new orders
+  // outside these hours regardless of who's placing it.
+  const { data: hours, error: hoursError } = await admin
+    .from("business_hours")
+    .select("opens_at, closes_at")
+    .eq("id", 1)
+    .single();
+  if (hoursError || !hours) return errorResponse(hoursError?.message ?? "business hours not configured", 500);
+  if (!isWithinBusinessHours(nowInCairo(), hours.opens_at, hours.closes_at)) {
+    return errorResponse("outside business hours", 422);
+  }
 
   // Self-checkout: the caller IS the customer (already authenticated, no
   // phone-lookup/guest-account dance needed like the call_center path
