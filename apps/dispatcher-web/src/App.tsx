@@ -11,6 +11,8 @@ import { Dashboard } from "./pages/Dashboard";
 import { DriverPerformance } from "./pages/DriverPerformance";
 import { Complaints } from "./pages/Complaints";
 import { BranchManagement } from "./pages/BranchManagement";
+import { MenuManagement } from "./pages/MenuManagement";
+import { MenuAvailability } from "./pages/MenuAvailability";
 
 type TabKey =
   | "dispatch"
@@ -20,7 +22,9 @@ type TabKey =
   | "dashboard"
   | "performance"
   | "complaints"
-  | "branches";
+  | "branches"
+  | "menu_photos"
+  | "menu_availability";
 
 const ROLE_TITLES: Record<string, string> = {
   dispatcher: "ديسباتشر",
@@ -45,18 +49,22 @@ const TABS_BY_ROLE: Record<string, { key: TabKey; label: string }[]> = {
     { key: "complaints", label: "الشكاوى" },
     { key: "users", label: "إدارة المستخدمين" },
     { key: "branches", label: "الفروع والمناطق" },
+    { key: "menu_photos", label: "صور المنتجات" },
+    { key: "menu_availability", label: "إقفال الأصناف" },
   ],
   regional_manager: [
     { key: "dashboard", label: "لوحة المتابعة" },
     { key: "performance", label: "أداء الطيارين" },
     { key: "complaints", label: "الشكاوى" },
     { key: "users", label: "إدارة المستخدمين" },
+    { key: "menu_availability", label: "إقفال الأصناف" },
   ],
   branch_manager: [
     { key: "dashboard", label: "لوحة المتابعة" },
     { key: "performance", label: "أداء الطيارين" },
     { key: "complaints", label: "الشكاوى" },
     { key: "users", label: "إدارة المستخدمين" },
+    { key: "menu_availability", label: "إقفال الأصناف" },
   ],
 };
 
@@ -78,6 +86,10 @@ function ScreenFor({ tab, profile }: { tab: TabKey; profile: Profile }) {
       return <Complaints />;
     case "branches":
       return <BranchManagement />;
+    case "menu_photos":
+      return <MenuManagement />;
+    case "menu_availability":
+      return <MenuAvailability profile={profile} />;
   }
 }
 

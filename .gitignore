@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 env.txt
+abdoaseem-tracker.xlsx
 
 # Node / web
 node_modules/

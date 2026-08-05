@@ -29,6 +29,19 @@ interface ComboOffer {
   is_active: boolean;
 }
 
+interface ComboChoiceOption {
+  id: number;
+  label: string;
+  display_order: number;
+}
+interface ComboChoiceGroup {
+  id: number;
+  combo_offer_id: number;
+  label: string;
+  display_order: number;
+  combo_choice_options: ComboChoiceOption[];
+}
+
 interface CartLine {
   key: string;
   menu_item_id?: number;
@@ -36,6 +49,8 @@ interface CartLine {
   name: string;
   unit_price: number;
   quantity: number;
+  comboChoiceOptionIds?: number[];
+  comboChoiceLabels?: string[];
 }
 
 interface Address {
@@ -71,6 +86,9 @@ export function CallCenter() {
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [combos, setCombos] = useState<ComboOffer[]>([]);
+  const [comboChoiceGroups, setComboChoiceGroups] = useState<ComboChoiceGroup[]>([]);
+  // combo_offer_id -> choice_group_id -> selected option id
+  const [comboSelections, setComboSelections] = useState<Record<number, Record<number, number>>>({});
 
   const [phone, setPhone] = useState("");
   const [searching, setSearching] = useState(false);
@@ -110,6 +128,11 @@ export function CallCenter() {
       .select("id, name, description, price, is_active")
       .eq("is_active", true)
       .then(({ data }) => setCombos((data as ComboOffer[]) ?? []));
+    supabase
+      .from("combo_choice_groups")
+      .select("id, combo_offer_id, label, display_order, combo_choice_options(id, label, display_order)")
+      .order("display_order")
+      .then(({ data }) => setComboChoiceGroups((data as ComboChoiceGroup[]) ?? []));
   }, []);
 
   // Best-effort branch suggestion once the customer's area is known - the
@@ -188,6 +211,42 @@ export function CallCenter() {
     return map;
   }, [menuItems]);
 
+  const choiceGroupsByCombo = useMemo(() => {
+    const map = new Map<number, ComboChoiceGroup[]>();
+    for (const group of comboChoiceGroups) {
+      const list = map.get(group.combo_offer_id) ?? [];
+      list.push(group);
+      map.set(group.combo_offer_id, list);
+    }
+    return map;
+  }, [comboChoiceGroups]);
+
+  function selectComboOption(comboId: number, groupId: number, optionId: number) {
+    setComboSelections((prev) => ({ ...prev, [comboId]: { ...prev[comboId], [groupId]: optionId } }));
+  }
+
+  function addComboToCart(combo: ComboOffer) {
+    const groups = choiceGroupsByCombo.get(combo.id) ?? [];
+    const selection = comboSelections[combo.id] ?? {};
+    const missing = groups.some((g) => !selection[g.id]);
+    if (missing) {
+      setError("اختار كل خيارات العرض الأول");
+      return;
+    }
+    setError(null);
+    const optionIds = groups.map((g) => selection[g.id]);
+    const labels = groups.map((g) => g.combo_choice_options.find((o) => o.id === selection[g.id])?.label ?? "");
+    const key = optionIds.length > 0 ? `combo-${combo.id}-${optionIds.join("-")}` : `combo-${combo.id}`;
+    addToCart({
+      key,
+      combo_offer_id: combo.id,
+      name: combo.name,
+      unit_price: combo.price,
+      comboChoiceOptionIds: optionIds.length > 0 ? optionIds : undefined,
+      comboChoiceLabels: labels.length > 0 ? labels : undefined,
+    });
+  }
+
   function resetForm() {
     setPhone("");
     setCustomerFound(null);
@@ -235,6 +294,7 @@ export function CallCenter() {
           menu_item_id: l.menu_item_id,
           combo_offer_id: l.combo_offer_id,
           quantity: l.quantity,
+          combo_choice_option_ids: l.comboChoiceOptionIds,
         })),
         payment_method: paymentMethod,
         payment_proof_url: paymentProofUrl,
@@ -344,23 +404,37 @@ export function CallCenter() {
           <div className="menu-category">
             <h3>الكومبوهات</h3>
             <div className="menu-grid">
-              {combos.map((combo) => (
-                <button
-                  key={combo.id}
-                  className="menu-item-btn"
-                  onClick={() =>
-                    addToCart({
-                      key: `combo-${combo.id}`,
-                      combo_offer_id: combo.id,
-                      name: combo.name,
-                      unit_price: combo.price,
-                    })
-                  }
-                >
-                  <span>{combo.name}</span>
-                  <span className="muted">{combo.price} ج</span>
-                </button>
-              ))}
+              {combos.map((combo) => {
+                const groups = choiceGroupsByCombo.get(combo.id) ?? [];
+                const selection = comboSelections[combo.id] ?? {};
+                return (
+                  <div key={combo.id} className="pending-order-card card">
+                    <div className="pending-order-header">
+                      <strong>{combo.name}</strong>
+                      <span className="muted">{combo.price} ج</span>
+                    </div>
+                    {groups.map((group) => (
+                      <div key={group.id} style={{ marginTop: 6 }}>
+                        <p className="muted" style={{ fontSize: "0.85rem", fontWeight: 700 }}>{group.label}</p>
+                        {group.combo_choice_options.map((option) => (
+                          <label key={option.id} className="radio-label" style={{ display: "block", fontSize: "0.85rem" }}>
+                            <input
+                              type="radio"
+                              name={`cc-combo-${combo.id}-group-${group.id}`}
+                              checked={selection[group.id] === option.id}
+                              onChange={() => selectComboOption(combo.id, group.id, option.id)}
+                            />
+                            {option.label}
+                          </label>
+                        ))}
+                      </div>
+                    ))}
+                    <button className="btn-primary" style={{ marginTop: 8 }} onClick={() => addComboToCart(combo)}>
+                      ضيف للسلة
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -371,7 +445,14 @@ export function CallCenter() {
         {cart.length === 0 && <p className="muted">مفيش أصناف لسه</p>}
         {cart.map((line) => (
           <div key={line.key} className="cart-line">
-            <span>{line.name}</span>
+            <span>
+              {line.name}
+              {line.comboChoiceLabels && line.comboChoiceLabels.length > 0 && (
+                <span className="muted" style={{ display: "block", fontSize: "0.8rem" }}>
+                  {line.comboChoiceLabels.join(" - ")}
+                </span>
+              )}
+            </span>
             <span className="cart-qty">
               <button onClick={() => changeQuantity(line.key, -1)}>-</button>
               {line.quantity}

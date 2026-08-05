@@ -21,6 +21,7 @@ export interface CallerProfile {
   region_id: number | null;
   is_active: boolean;
   name: string;
+  phone: string;
 }
 
 // Admin client - bypasses RLS. Every mutation in these functions is only
@@ -53,7 +54,7 @@ export async function getCaller(req: Request): Promise<CallerProfile | null> {
   const admin = getAdminClient();
   const { data: profile, error: profileError } = await admin
     .from("users")
-    .select("id, role, branch_id, region_id, is_active, name")
+    .select("id, role, branch_id, region_id, is_active, name, phone")
     .eq("id", userData.user.id)
     .single();
 

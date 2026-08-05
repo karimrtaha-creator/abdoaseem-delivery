@@ -1,12 +1,18 @@
 import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 
 export interface CartLine {
-  key: string; // "item-<id>" or "combo-<id>" - stable across add/remove
+  key: string; // "item-<id>" or "combo-<id>-<choiceOptionIds>" - stable across add/remove
   menu_item_id?: number;
   combo_offer_id?: number;
   name: string;
   unit_price: number;
   quantity: number;
+  // Chosen option per combo_choice_group, in group display_order - only
+  // set for combo lines with choice groups. create-order re-resolves
+  // these server-side (never trusts the label text itself), this is just
+  // what the cart/checkout UI displays before submitting.
+  comboChoiceOptionIds?: number[];
+  comboChoiceLabels?: string[];
 }
 
 interface CartContextValue {
@@ -15,6 +21,7 @@ interface CartContextValue {
   total: number;
   addLine: (line: Omit<CartLine, "quantity">) => void;
   changeQuantity: (key: string, delta: number) => void;
+  clear: () => void;
 }
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -52,11 +59,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  function clear() {
+    setLines([]);
+  }
+
   const count = useMemo(() => lines.reduce((sum, l) => sum + l.quantity, 0), [lines]);
   const total = useMemo(() => lines.reduce((sum, l) => sum + l.unit_price * l.quantity, 0), [lines]);
 
   return (
-    <CartContext.Provider value={{ lines, count, total, addLine, changeQuantity }}>{children}</CartContext.Provider>
+    <CartContext.Provider value={{ lines, count, total, addLine, changeQuantity, clear }}>
+      {children}
+    </CartContext.Provider>
   );
 }
 

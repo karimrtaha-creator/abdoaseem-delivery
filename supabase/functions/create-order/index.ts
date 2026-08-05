@@ -1,25 +1,180 @@
-// Section 6, call center screen steps 1-5. Creates (or reuses) the
-// customer profile and the order + its line items in one server-side call.
-// Prices are always re-fetched from menu_items/combo_offers here - a
-// client-supplied price is never trusted, so a tampered request can't
-// under-charge an order.
+// Section 6, call center screen steps 1-5, plus customer self-checkout
+// (customer-web). Creates (or reuses) the customer profile and the order +
+// its line items in one server-side call. Prices are always re-fetched
+// from menu_items/combo_offers here - a client-supplied price is never
+// trusted, so a tampered request can't under-charge an order.
 import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 interface CartItem {
   menu_item_id?: number;
   combo_offer_id?: number;
   quantity: number;
+  combo_choice_option_ids?: number[];
 }
 
 interface CreateOrderBody {
   customer_phone?: string;
   customer_name?: string;
   address?: { building?: string; floor?: string; apartment?: string; area?: string };
+  address_id?: number;
   branch_id?: number;
   items?: CartItem[];
   payment_method?: "cash" | "instapay_transfer";
   payment_proof_url?: string;
+}
+
+// Re-fetches every referenced item/combo's current price server-side,
+// inserts the order + its line items, and returns the HTTP response.
+// Shared by both the customer self-checkout path and the call_center
+// path below - the only difference between them is how order_source/
+// customer_id/branch_id/address_id get decided beforehand.
+async function finishOrder(
+  admin: SupabaseClient,
+  args: {
+    order_source: "customer_app" | "call_center";
+    branch_id: number;
+    customer_id: string;
+    customer_phone: string;
+    address_id: number | null;
+    items: CartItem[];
+    paymentMethod: "cash" | "instapay_transfer";
+    paymentProofUrl: string | null;
+    redirectedFrom?: string | null;
+    servingBranchName?: string;
+  },
+): Promise<Response> {
+  const menuItemIds = args.items.filter((i) => i.menu_item_id != null).map((i) => i.menu_item_id as number);
+  const comboIds = args.items.filter((i) => i.combo_offer_id != null).map((i) => i.combo_offer_id as number);
+
+  const [menuItemsRes, combosRes] = await Promise.all([
+    menuItemIds.length
+      ? admin.from("menu_items").select("id, price, is_available").in("id", menuItemIds)
+      : Promise.resolve({ data: [], error: null }),
+    comboIds.length
+      ? admin.from("combo_offers").select("id, price, is_active").in("id", comboIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (menuItemsRes.error) return errorResponse(menuItemsRes.error.message, 500);
+  if (combosRes.error) return errorResponse(combosRes.error.message, 500);
+
+  const menuItemPrices = new Map((menuItemsRes.data ?? []).map((m) => [m.id, m]));
+  const comboPrices = new Map((combosRes.data ?? []).map((c) => [c.id, c]));
+
+  // Combo choices are re-resolved server-side the same way prices are -
+  // the client sends option ids, never the label text, and this fetches
+  // every choice group + option for the combos actually being ordered so
+  // each selection can be validated (belongs to the right combo, exactly
+  // one option per group) before building the human-readable summary that
+  // gets stored on the order line.
+  const { data: choiceGroupsData, error: choiceGroupsError } = comboIds.length
+    ? await admin
+        .from("combo_choice_groups")
+        .select("id, combo_offer_id, label, combo_choice_options(id, label)")
+        .in("combo_offer_id", comboIds)
+    : { data: [], error: null };
+  if (choiceGroupsError) return errorResponse(choiceGroupsError.message, 500);
+  const choiceGroupsByCombo = new Map<number, { id: number; label: string; combo_choice_options: { id: number; label: string }[] }[]>();
+  for (const group of choiceGroupsData ?? []) {
+    const list = choiceGroupsByCombo.get(group.combo_offer_id) ?? [];
+    list.push(group);
+    choiceGroupsByCombo.set(group.combo_offer_id, list);
+  }
+
+  const orderItemsToInsert: {
+    menu_item_id: number | null;
+    combo_offer_id: number | null;
+    quantity: number;
+    unit_price: number;
+    combo_selection: string | null;
+  }[] = [];
+
+  for (const item of args.items) {
+    if (item.menu_item_id != null) {
+      const found = menuItemPrices.get(item.menu_item_id);
+      if (!found) return errorResponse(`menu_item_id ${item.menu_item_id} not found`, 422);
+      if (!found.is_available) return errorResponse(`menu_item_id ${item.menu_item_id} is not available`, 422);
+      orderItemsToInsert.push({
+        menu_item_id: item.menu_item_id,
+        combo_offer_id: null,
+        quantity: item.quantity,
+        unit_price: found.price,
+        combo_selection: null,
+      });
+    } else {
+      const found = comboPrices.get(item.combo_offer_id as number);
+      if (!found) return errorResponse(`combo_offer_id ${item.combo_offer_id} not found`, 422);
+      if (!found.is_active) return errorResponse(`combo_offer_id ${item.combo_offer_id} is not active`, 422);
+
+      const groups = choiceGroupsByCombo.get(item.combo_offer_id as number) ?? [];
+      let comboSelection: string | null = null;
+      if (groups.length > 0) {
+        const providedIds = new Set(item.combo_choice_option_ids ?? []);
+        const parts: string[] = [];
+        for (const group of groups) {
+          const matches = group.combo_choice_options.filter((o) => providedIds.has(o.id));
+          if (matches.length !== 1) {
+            return errorResponse(`combo_offer_id ${item.combo_offer_id}: exactly one option required for '${group.label}'`, 422);
+          }
+          parts.push(`${group.label}: ${matches[0].label}`);
+        }
+        comboSelection = parts.join(" | ");
+      }
+
+      orderItemsToInsert.push({
+        menu_item_id: null,
+        combo_offer_id: item.combo_offer_id as number,
+        quantity: item.quantity,
+        unit_price: found.price,
+        combo_selection: comboSelection,
+      });
+    }
+  }
+
+  // Delivery fee is a per-branch price table (general_manager-managed,
+  // BranchManagement.tsx), never something the client can set - re-fetched
+  // here the same "never trust the client" way prices/branch routing are.
+  const { data: feeBranch, error: feeBranchError } = await admin
+    .from("branches")
+    .select("delivery_fee")
+    .eq("id", args.branch_id)
+    .single();
+  if (feeBranchError) return errorResponse(feeBranchError.message, 500);
+
+  const { data: order, error: orderError } = await admin
+    .from("orders")
+    .insert({
+      order_source: args.order_source,
+      branch_id: args.branch_id,
+      customer_id: args.customer_id,
+      customer_phone: args.customer_phone,
+      address_id: args.address_id,
+      status: "pending_acceptance",
+      order_time: new Date().toISOString(),
+      payment_method: args.paymentMethod,
+      payment_proof_url: args.paymentProofUrl,
+      delivery_fee_after_tax: feeBranch?.delivery_fee ?? 0,
+    })
+    .select("id")
+    .single();
+  if (orderError || !order) return errorResponse(orderError?.message ?? "failed to create order", 500);
+
+  const { error: itemsError } = await admin
+    .from("order_items")
+    .insert(orderItemsToInsert.map((i) => ({ ...i, order_id: order.id })));
+  if (itemsError) {
+    return errorResponse(`order created (id=${order.id}) but items failed: ${itemsError.message}`, 500);
+  }
+
+  return jsonResponse({
+    order_id: order.id,
+    status: "pending_acceptance",
+    items_count: orderItemsToInsert.length,
+    redirected_from: args.redirectedFrom ?? null,
+    serving_branch_name: args.servingBranchName ?? null,
+    delivery_fee: feeBranch?.delivery_fee ?? 0,
+  });
 }
 
 Deno.serve(async (req) => {
@@ -28,7 +183,8 @@ Deno.serve(async (req) => {
 
   const caller = await getCaller(req);
   if (!caller || !caller.is_active) return errorResponse("unauthorized", 401);
-  if (!["call_center", "general_manager", "team_leader"].includes(caller.role)) {
+  const isSelfCheckout = caller.role === "customer";
+  if (!isSelfCheckout && !["call_center", "general_manager", "team_leader"].includes(caller.role)) {
     return errorResponse("only call_center/team_leader/general_manager can create phone orders", 403);
   }
 
@@ -39,13 +195,9 @@ Deno.serve(async (req) => {
     return errorResponse("invalid JSON body");
   }
 
-  const customerPhone = body.customer_phone?.trim();
-  const branchId = body.branch_id;
   const items = body.items ?? [];
   const paymentMethod = body.payment_method;
 
-  if (!customerPhone) return errorResponse("customer_phone is required");
-  if (!branchId) return errorResponse("branch_id is required");
   if (items.length === 0) return errorResponse("items must be a non-empty array");
   if (!paymentMethod || !["cash", "instapay_transfer"].includes(paymentMethod)) {
     return errorResponse("payment_method must be 'cash' or 'instapay_transfer'");
@@ -65,6 +217,72 @@ Deno.serve(async (req) => {
   }
 
   const admin = getAdminClient();
+
+  // Self-checkout: the caller IS the customer (already authenticated, no
+  // phone-lookup/guest-account dance needed like the call_center path
+  // below). They pick one of their own saved customer_addresses rather
+  // than an agent typing a fresh address over the phone - branch_id is
+  // derived from that address's nearest_branch_id, never taken from the
+  // client directly, same "never trust the client for anything
+  // authorization/routing-relevant" rule as the price re-fetch above.
+  if (isSelfCheckout) {
+    if (!body.address_id) return errorResponse("address_id is required");
+    const { data: address, error: addressError } = await admin
+      .from("customer_addresses")
+      .select("id, user_id, nearest_branch_id")
+      .eq("id", body.address_id)
+      .single();
+    if (addressError || !address) return errorResponse("address not found", 404);
+    if (address.user_id !== caller.id) return errorResponse("this address does not belong to you", 403);
+    if (!address.nearest_branch_id) return errorResponse("this address has no nearest branch set", 422);
+
+    const { data: branch, error: branchError } = await admin
+      .from("branches")
+      .select("id, name, is_delivery_available, delivery_fallback_branch_id")
+      .eq("id", address.nearest_branch_id)
+      .single();
+    if (branchError || !branch) return errorResponse("branch not found", 404);
+
+    let servingBranch = branch;
+    let redirectedFrom: string | null = null;
+
+    // Some branches are dine-in/takeaway only (e.g. المراغي, شارع 7) but
+    // still have a sister branch that covers their delivery area
+    // (delivery_fallback_branch_id, see 0014) - route the order there
+    // instead of failing, and tell the caller so the customer sees why.
+    if (!branch.is_delivery_available) {
+      if (!branch.delivery_fallback_branch_id) return errorResponse("this branch does not offer delivery", 422);
+      const { data: fallbackBranch, error: fallbackError } = await admin
+        .from("branches")
+        .select("id, name, is_delivery_available")
+        .eq("id", branch.delivery_fallback_branch_id)
+        .single();
+      if (fallbackError || !fallbackBranch || !fallbackBranch.is_delivery_available) {
+        return errorResponse("this branch does not offer delivery", 422);
+      }
+      servingBranch = { ...fallbackBranch, delivery_fallback_branch_id: null };
+      redirectedFrom = branch.name;
+    }
+
+    return await finishOrder(admin, {
+      order_source: "customer_app",
+      branch_id: servingBranch.id,
+      customer_id: caller.id,
+      customer_phone: caller.phone ?? "",
+      address_id: address.id,
+      items,
+      paymentMethod,
+      paymentProofUrl: body.payment_proof_url ?? null,
+      redirectedFrom,
+      servingBranchName: servingBranch.name,
+    });
+  }
+
+  const customerPhone = body.customer_phone?.trim();
+  const branchId = body.branch_id;
+
+  if (!customerPhone) return errorResponse("customer_phone is required");
+  if (!branchId) return errorResponse("branch_id is required");
 
   const { data: branch, error: branchError } = await admin
     .from("branches")
@@ -147,77 +365,14 @@ Deno.serve(async (req) => {
     if (createProfileError) return errorResponse(createProfileError.message, 500);
   }
 
-  // Re-fetch every referenced item/combo's current price server-side.
-  const menuItemIds = items.filter((i) => i.menu_item_id != null).map((i) => i.menu_item_id as number);
-  const comboIds = items.filter((i) => i.combo_offer_id != null).map((i) => i.combo_offer_id as number);
-
-  const [menuItemsRes, combosRes] = await Promise.all([
-    menuItemIds.length
-      ? admin.from("menu_items").select("id, price, is_available").in("id", menuItemIds)
-      : Promise.resolve({ data: [], error: null }),
-    comboIds.length
-      ? admin.from("combo_offers").select("id, price, is_active").in("id", comboIds)
-      : Promise.resolve({ data: [], error: null }),
-  ]);
-  if (menuItemsRes.error) return errorResponse(menuItemsRes.error.message, 500);
-  if (combosRes.error) return errorResponse(combosRes.error.message, 500);
-
-  const menuItemPrices = new Map((menuItemsRes.data ?? []).map((m) => [m.id, m]));
-  const comboPrices = new Map((combosRes.data ?? []).map((c) => [c.id, c]));
-
-  const orderItemsToInsert: {
-    menu_item_id: number | null;
-    combo_offer_id: number | null;
-    quantity: number;
-    unit_price: number;
-  }[] = [];
-
-  for (const item of items) {
-    if (item.menu_item_id != null) {
-      const found = menuItemPrices.get(item.menu_item_id);
-      if (!found) return errorResponse(`menu_item_id ${item.menu_item_id} not found`, 422);
-      if (!found.is_available) return errorResponse(`menu_item_id ${item.menu_item_id} is not available`, 422);
-      orderItemsToInsert.push({
-        menu_item_id: item.menu_item_id,
-        combo_offer_id: null,
-        quantity: item.quantity,
-        unit_price: found.price,
-      });
-    } else {
-      const found = comboPrices.get(item.combo_offer_id as number);
-      if (!found) return errorResponse(`combo_offer_id ${item.combo_offer_id} not found`, 422);
-      if (!found.is_active) return errorResponse(`combo_offer_id ${item.combo_offer_id} is not active`, 422);
-      orderItemsToInsert.push({
-        menu_item_id: null,
-        combo_offer_id: item.combo_offer_id as number,
-        quantity: item.quantity,
-        unit_price: found.price,
-      });
-    }
-  }
-
-  const { data: order, error: orderError } = await admin
-    .from("orders")
-    .insert({
-      order_source: "call_center",
-      branch_id: branchId,
-      customer_id: customerId,
-      customer_phone: customerPhone,
-      status: "pending_acceptance",
-      order_time: new Date().toISOString(),
-      payment_method: paymentMethod,
-      payment_proof_url: body.payment_proof_url ?? null,
-    })
-    .select("id")
-    .single();
-  if (orderError || !order) return errorResponse(orderError?.message ?? "failed to create order", 500);
-
-  const { error: itemsError } = await admin
-    .from("order_items")
-    .insert(orderItemsToInsert.map((i) => ({ ...i, order_id: order.id })));
-  if (itemsError) {
-    return errorResponse(`order created (id=${order.id}) but items failed: ${itemsError.message}`, 500);
-  }
-
-  return jsonResponse({ order_id: order.id, status: "pending_acceptance", items_count: orderItemsToInsert.length });
+  return await finishOrder(admin, {
+    order_source: "call_center",
+    branch_id: branchId,
+    customer_id: customerId,
+    customer_phone: customerPhone,
+    address_id: null,
+    items,
+    paymentMethod,
+    paymentProofUrl: body.payment_proof_url ?? null,
+  });
 });

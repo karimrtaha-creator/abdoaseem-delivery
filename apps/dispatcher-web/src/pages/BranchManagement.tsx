@@ -6,6 +6,7 @@ interface Branch {
   name: string;
   region_id: number | null;
   is_delivery_available: boolean;
+  delivery_fee: number;
 }
 
 interface Region {
@@ -48,14 +49,17 @@ export function BranchManagement() {
   const [pickBranchManager, setPickBranchManager] = useState<Record<number, string>>({});
   const [pickRegionManager, setPickRegionManager] = useState<Record<number, string>>({});
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [feeDrafts, setFeeDrafts] = useState<Record<number, string>>({});
 
   async function load() {
     const [branchesRes, regionsRes, staffRes] = await Promise.all([
-      supabase.from("branches").select("id, name, region_id, is_delivery_available").order("name"),
+      supabase.from("branches").select("id, name, region_id, is_delivery_available, delivery_fee").order("name"),
       supabase.from("regions").select("id, name").order("name"),
       supabase.from("users").select("id, name, phone, role, branch_id, region_id").neq("role", "customer").order("name"),
     ]);
-    setBranches((branchesRes.data as Branch[]) ?? []);
+    const loadedBranches = (branchesRes.data as Branch[]) ?? [];
+    setBranches(loadedBranches);
+    setFeeDrafts(Object.fromEntries(loadedBranches.map((b) => [b.id, String(b.delivery_fee)])));
     setRegions((regionsRes.data as Region[]) ?? []);
     setStaff((staffRes.data as StaffUser[]) ?? []);
     setLoading(false);
@@ -115,6 +119,17 @@ export function BranchManagement() {
     setBusyKey(`delivery-${branch.id}`);
     await supabase.from("branches").update({ is_delivery_available: !branch.is_delivery_available }).eq("id", branch.id);
     setBusyKey(null);
+    load();
+  }
+
+  async function saveFee(branch: Branch) {
+    setError(null);
+    const value = Number(feeDrafts[branch.id]);
+    if (Number.isNaN(value) || value < 0) return setError("رسم التوصيل لازم يكون رقم صحيح 0 أو أكبر");
+    setBusyKey(`fee-${branch.id}`);
+    const { error: updateError } = await supabase.from("branches").update({ delivery_fee: value }).eq("id", branch.id);
+    setBusyKey(null);
+    if (updateError) return setError(updateError.message);
     load();
   }
 
@@ -265,6 +280,26 @@ export function BranchManagement() {
                   />
                   متاح للتوصيل
                 </label>
+                <div className="inline-row">
+                  <label>
+                    رسم التوصيل (ج)
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      style={{ width: "90px" }}
+                      value={feeDrafts[b.id] ?? ""}
+                      onChange={(e) => setFeeDrafts({ ...feeDrafts, [b.id]: e.target.value })}
+                    />
+                  </label>
+                  <button
+                    className="btn-primary"
+                    disabled={busyKey === `fee-${b.id}` || feeDrafts[b.id] === String(b.delivery_fee)}
+                    onClick={() => saveFee(b)}
+                  >
+                    حفظ الرسم
+                  </button>
+                </div>
                 <div className="inline-row">
                   <select
                     value={pickBranchManager[b.id] ?? ""}
