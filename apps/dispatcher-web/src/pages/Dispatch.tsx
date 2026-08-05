@@ -16,6 +16,15 @@ interface Driver {
   name: string;
 }
 
+interface OrderItemRow {
+  id: number;
+  quantity: number;
+  combo_selection: string | null;
+  note: string | null;
+  menu_items: { name: string } | null;
+  combo_offers: { name: string } | null;
+}
+
 type Step = "pick_order" | "confirm";
 
 // No prep-time SLA is defined anywhere in the spec (sla_tiers only covers
@@ -48,6 +57,7 @@ export function Dispatch({ profile }: { profile: Profile }) {
   const knownOrderIds = useRef<Set<number> | null>(null);
 
   const [selectedOrder, setSelectedOrder] = useState<PreparingOrder | null>(null);
+  const [selectedOrderItems, setSelectedOrderItems] = useState<OrderItemRow[]>([]);
   const [driverId, setDriverId] = useState("");
   const [fee, setFee] = useState("");
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -146,12 +156,22 @@ export function Dispatch({ profile }: { profile: Profile }) {
 
   function pickOrder(order: PreparingOrder) {
     setSelectedOrder(order);
+    setSelectedOrderItems([]);
     setDriverId("");
     setFee("");
     setReceiptFile(null);
     setError(null);
     setResult(null);
     setStep("confirm");
+    // The dispatcher/branch has had no way to see what's actually in the
+    // order anywhere in this screen until now - found during an audit that
+    // per-item customer notes ("من غير تقلية") were being saved but never
+    // shown to anyone who could act on them.
+    supabase
+      .from("order_items")
+      .select("id, quantity, combo_selection, note, menu_items(name), combo_offers(name)")
+      .eq("order_id", order.id)
+      .then(({ data }) => setSelectedOrderItems((data as unknown as OrderItemRow[]) ?? []));
     // Opening the order counts as the dispatcher acknowledging it.
     setRingingOrderIds((prev) => {
       if (!prev.has(order.id)) return prev;
@@ -215,6 +235,22 @@ export function Dispatch({ profile }: { profile: Profile }) {
         </button>
         <h2>تسجيل خروج الأوردر #{selectedOrder.pos_order_id ?? selectedOrder.id}</h2>
         <p className="muted">تليفون العميل: {selectedOrder.customer_phone}</p>
+
+        {selectedOrderItems.length > 0 && (
+          <div style={{ marginBottom: "var(--space-3)" }}>
+            {selectedOrderItems.map((line) => (
+              <div key={line.id} className="cart-line-wrap">
+                <div className="cart-line">
+                  <span>
+                    {line.menu_items?.name ?? line.combo_offers?.name ?? "صنف"} × {line.quantity}
+                  </span>
+                </div>
+                {line.combo_selection && <p className="muted" style={{ margin: "0 0 6px", fontSize: "0.85rem" }}>{line.combo_selection}</p>}
+                {line.note && <p className="error-text" style={{ margin: "0 0 6px", fontSize: "0.85rem" }}>ملاحظة العميل: {line.note}</p>}
+              </div>
+            ))}
+          </div>
+        )}
 
         <label>
           اختيار الطيار

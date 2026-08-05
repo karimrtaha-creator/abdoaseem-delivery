@@ -12,6 +12,21 @@ import { alertManagersOrderDelayed } from "../_shared/notify.ts";
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
+  // This function has no per-user role to check (it's meant to run
+  // unattended on a schedule, not be called by a signed-in staff member),
+  // so it's gated the way Supabase's own docs recommend for cron-only
+  // functions: only a request presenting the service_role key - known to
+  // the cron job/backend, never shipped to either frontend - can invoke
+  // it. Found during an audit with no auth check at all: any anonymous
+  // caller with just the public anon key could trigger it and see internal
+  // order counts.
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const presentedToken = authHeader.replace(/^Bearer\s+/i, "");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!serviceRoleKey || presentedToken !== serviceRoleKey) {
+    return errorResponse("unauthorized", 401);
+  }
+
   const admin = getAdminClient();
   const nowIso = new Date().toISOString();
 
