@@ -23,6 +23,18 @@ interface OngoingOrder {
   customer_phone: string;
 }
 
+interface OrderItemRow {
+  id: number;
+  order_id: number;
+  quantity: number;
+  combo_selection: string | null;
+  note: string | null;
+  menu_items: { name: string } | null;
+  combo_offers: { name: string } | null;
+}
+
+const STAFF_CANCELLABLE_STATUSES = ["preparing", "out_for_delivery", "delayed"];
+
 async function callFunction<T>(name: string, body: unknown): Promise<T> {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token;
@@ -49,6 +61,9 @@ export function AcceptanceLobby() {
   const [busyOrderId, setBusyOrderId] = useState<number | null>(null);
   const [proofUrls, setProofUrls] = useState<Map<number, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  const [orderItemsByOrder, setOrderItemsByOrder] = useState<Map<number, OrderItemRow[]>>(new Map());
+  const [cancelOpenFor, setCancelOpenFor] = useState<number | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
 
   async function loadAll() {
     const startOfDay = new Date();
@@ -72,15 +87,38 @@ export function AcceptanceLobby() {
         .gte("accepted_at", startOfDay.toISOString()),
     ]);
 
+    const pending = (pendingRes.data as PendingOrder[]) ?? [];
+    const ongoing = (ongoingRes.data as OngoingOrder[]) ?? [];
+
     setBranches((branchesRes.data as Branch[]) ?? []);
-    setPendingOrders((pendingRes.data as PendingOrder[]) ?? []);
-    setOngoingOrders((ongoingRes.data as OngoingOrder[]) ?? []);
+    setPendingOrders(pending);
+    setOngoingOrders(ongoing);
 
     const counts = new Map<number, number>();
     for (const row of (acceptedTodayRes.data as { branch_id: number }[]) ?? []) {
       counts.set(row.branch_id, (counts.get(row.branch_id) ?? 0) + 1);
     }
     setAcceptedTodayByBranch(counts);
+
+    // Line items for every order shown on this screen - team_leader used to
+    // have to accept/reject and cancel completely blind to what was
+    // actually ordered, found during an audit.
+    const orderIds = [...pending.map((o) => o.id), ...ongoing.map((o) => o.id)];
+    if (orderIds.length > 0) {
+      const { data: itemsData } = await supabase
+        .from("order_items")
+        .select("id, order_id, quantity, combo_selection, note, menu_items(name), combo_offers(name)")
+        .in("order_id", orderIds);
+      const byOrder = new Map<number, OrderItemRow[]>();
+      for (const item of (itemsData as unknown as OrderItemRow[]) ?? []) {
+        const list = byOrder.get(item.order_id) ?? [];
+        list.push(item);
+        byOrder.set(item.order_id, list);
+      }
+      setOrderItemsByOrder(byOrder);
+    } else {
+      setOrderItemsByOrder(new Map());
+    }
 
     setLoading(false);
   }
@@ -122,6 +160,40 @@ export function AcceptanceLobby() {
     } finally {
       setBusyOrderId(null);
     }
+  }
+
+  async function cancelOngoingOrder(orderId: number) {
+    if (!cancelReason.trim()) return;
+    setBusyOrderId(orderId);
+    setError(null);
+    try {
+      await callFunction("cancel-order", { order_id: orderId, reason: cancelReason.trim() });
+      setCancelOpenFor(null);
+      setCancelReason("");
+      loadAll();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "فشل إلغاء الأوردر");
+    } finally {
+      setBusyOrderId(null);
+    }
+  }
+
+  function OrderItemsList({ orderId }: { orderId: number }) {
+    const items = orderItemsByOrder.get(orderId) ?? [];
+    if (items.length === 0) return null;
+    return (
+      <div style={{ margin: "8px 0" }}>
+        {items.map((line) => (
+          <div key={line.id} style={{ fontSize: "0.9rem", marginBottom: 4 }}>
+            <span>
+              {line.menu_items?.name ?? line.combo_offers?.name ?? "صنف"} × {line.quantity}
+            </span>
+            {line.combo_selection && <span className="muted"> - {line.combo_selection}</span>}
+            {line.note && <p className="error-text" style={{ margin: "2px 0 0" }}>ملاحظة العميل: {line.note}</p>}
+          </div>
+        ))}
+      </div>
+    );
   }
 
   const totalAcceptedToday = [...acceptedTodayByBranch.values()].reduce((a, b) => a + b, 0);
@@ -170,6 +242,7 @@ export function AcceptanceLobby() {
                   )}
                 </div>
               )}
+              <OrderItemsList orderId={o.id} />
               <div className="inline-row">
                 <button
                   className="btn-primary"
@@ -195,10 +268,54 @@ export function AcceptanceLobby() {
         <h2>الأوردرات الجارية ({ongoingOrders.length})</h2>
         <div className="order-list">
           {ongoingOrders.map((o) => (
-            <div key={o.id} className={`order-row${o.status === "delayed" ? " order-row-delayed" : ""}`}>
-              <span className="order-row-id">#{o.id}</span>
-              <span>{branchName(o.branch_id)}</span>
-              <span className="muted">{STATUS_LABELS[o.status] ?? o.status}</span>
+            <div key={o.id} className={`card pending-order-card${o.status === "delayed" ? " order-row-delayed" : ""}`}>
+              <div className="pending-order-header">
+                <strong>أوردر #{o.id}</strong>
+                <span className="muted">
+                  {branchName(o.branch_id)} - {STATUS_LABELS[o.status] ?? o.status}
+                </span>
+              </div>
+              <OrderItemsList orderId={o.id} />
+              {STAFF_CANCELLABLE_STATUSES.includes(o.status) && (
+                <>
+                  {cancelOpenFor === o.id ? (
+                    <div className="inline-row" style={{ marginTop: 6 }}>
+                      <input
+                        placeholder="سبب الإلغاء (إجباري)"
+                        value={cancelReason}
+                        onChange={(e) => setCancelReason(e.target.value)}
+                      />
+                      <button
+                        className="btn-danger"
+                        disabled={busyOrderId === o.id || !cancelReason.trim()}
+                        onClick={() => cancelOngoingOrder(o.id)}
+                      >
+                        تأكيد الإلغاء
+                      </button>
+                      <button
+                        className="btn-link"
+                        onClick={() => {
+                          setCancelOpenFor(null);
+                          setCancelReason("");
+                        }}
+                      >
+                        رجوع
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      className="btn-link"
+                      style={{ color: "var(--danger)" }}
+                      onClick={() => {
+                        setCancelOpenFor(o.id);
+                        setCancelReason("");
+                      }}
+                    >
+                      إلغاء الأوردر
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           ))}
         </div>

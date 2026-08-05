@@ -1,13 +1,23 @@
-// Customer self-service order cancellation (customer-web). Deliberately
-// narrow: only the customer who owns the order, only while it's still
-// 'pending_acceptance' (the branch hasn't started prepping yet) - once a
-// branch accepts and starts cooking, cancellation needs a human
-// conversation, not a button. A reason is required and stored so staff
-// can see why every cancelled order was cancelled.
+// Order cancellation - two distinct paths sharing one function since both
+// end at the same "stamp cancelled + reason" update:
+//   1. Customer self-service (customer-web): only their own order, only
+//      while it's still 'pending_acceptance' - once a branch accepts and
+//      starts cooking, cancellation needs a human conversation, not a
+//      customer-facing button.
+//   2. Staff (team_leader/general_manager, from AcceptanceLobby.tsx):
+//      cancelling an order that's *already* been accepted (preparing/
+//      out_for_delivery/delayed) - e.g. the branch ran out of an
+//      ingredient, or the driver had an accident. Requires a reason for
+//      the same audit-trail purpose. Not for pending_acceptance orders -
+//      that's what accept-order's "reject" action is for.
+// A reason is required on both paths and stored so anyone reviewing the
+// order later can see exactly why it was cancelled.
 import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 
-const CANCELLABLE_STATUSES = ["pending_acceptance"];
+const CUSTOMER_CANCELLABLE_STATUSES = ["pending_acceptance"];
+const STAFF_CANCELLABLE_STATUSES = ["preparing", "out_for_delivery", "delayed"];
+const STAFF_CANCEL_ROLES = ["team_leader", "general_manager"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -15,7 +25,10 @@ Deno.serve(async (req) => {
 
   const caller = await getCaller(req);
   if (!caller || !caller.is_active) return errorResponse("unauthorized", 401);
-  if (caller.role !== "customer") return errorResponse("only the customer who placed the order can cancel it", 403);
+  const isStaff = STAFF_CANCEL_ROLES.includes(caller.role);
+  if (caller.role !== "customer" && !isStaff) {
+    return errorResponse("only the customer who placed the order, or a team_leader/general_manager, can cancel it", 403);
+  }
 
   let body: { order_id?: number; reason?: string };
   try {
@@ -36,12 +49,22 @@ Deno.serve(async (req) => {
     .eq("id", order_id)
     .single();
   if (orderError || !order) return errorResponse("order not found", 404);
-  if (order.customer_id !== caller.id) return errorResponse("this is not your order", 403);
-  if (!CANCELLABLE_STATUSES.includes(order.status)) {
-    return errorResponse(
-      "this order can no longer be cancelled - the branch has already started preparing it, call 19860",
-      422,
-    );
+
+  if (isStaff) {
+    if (!STAFF_CANCELLABLE_STATUSES.includes(order.status)) {
+      return errorResponse(
+        `this order is in status '${order.status}' - staff cancellation only applies after acceptance (preparing/out_for_delivery/delayed); use accept-order's reject action for a still-pending order`,
+        422,
+      );
+    }
+  } else {
+    if (order.customer_id !== caller.id) return errorResponse("this is not your order", 403);
+    if (!CUSTOMER_CANCELLABLE_STATUSES.includes(order.status)) {
+      return errorResponse(
+        "this order can no longer be cancelled - the branch has already started preparing it, call 19860",
+        422,
+      );
+    }
   }
 
   const { error: updateError } = await admin
