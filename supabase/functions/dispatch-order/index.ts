@@ -38,15 +38,21 @@ Deno.serve(async (req) => {
 
   const { data: order, error: orderError } = await admin
     .from("orders")
-    .select("id, branch_id, status, accepted_at, customer_phone")
+    .select("id, branch_id, status, dispatch_time, accepted_at, customer_phone")
     .eq("id", order_id)
     .single();
   if (orderError || !order) return errorResponse("order not found", 404);
   if (order.branch_id !== caller.branch_id) {
     return errorResponse("order does not belong to your branch", 403);
   }
-  if (order.status !== "preparing") {
-    return errorResponse(`order is in status '${order.status}', not 'preparing'`, 409);
+  // 'delayed' is allowed too, but only the still-preparing flavor of it
+  // (check-sla-breaches flips a forgotten preparing order to 'delayed';
+  // dispatch_time is still null for that case) - an already-dispatched
+  // order that later ran late is also 'delayed' but has a dispatch_time
+  // set, and must never be re-dispatched through this path.
+  const stillAwaitingDispatch = order.status === "preparing" || (order.status === "delayed" && !order.dispatch_time);
+  if (!stillAwaitingDispatch) {
+    return errorResponse(`order is in status '${order.status}', not awaiting dispatch`, 409);
   }
 
   const { data: driver, error: driverError } = await admin

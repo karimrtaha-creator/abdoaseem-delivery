@@ -70,7 +70,14 @@ export function Dispatch({ profile }: { profile: Profile }) {
         .from("orders")
         .select("id, pos_order_id, customer_phone, order_time, accepted_at")
         .eq("branch_id", profile.branch_id)
-        .eq("status", "preparing")
+        // Includes 'delayed' orders that are still awaiting dispatch (the
+        // server-side prep-time check - see check-sla-breaches - flips a
+        // forgotten preparing order to 'delayed' so it's visible on the
+        // dashboard, but it still needs to actually get dispatched here;
+        // dispatch_time null is what tells the two 'delayed' cases apart
+        // from an already-out-for-delivery order that later ran late).
+        .in("status", ["preparing", "delayed"])
+        .is("dispatch_time", null)
         .order("order_time", { ascending: true }),
       supabase
         .from("users")
