@@ -1,8 +1,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
     <application
         android:label="abdoaseem_driver"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- New-order/cancellation pushes should wake the driver even with
+             the app closed - a distinct high-importance channel so its sound
+             can't get silenced by a lower-priority default channel. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="driver_alerts" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

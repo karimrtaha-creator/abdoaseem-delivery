@@ -14,6 +14,7 @@
 // order later can see exactly why it was cancelled.
 import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
+import { sendDriverPush } from "../_shared/fcm.ts";
 
 const CUSTOMER_CANCELLABLE_STATUSES = ["pending_acceptance"];
 const STAFF_CANCELLABLE_STATUSES = ["preparing", "out_for_delivery", "delayed"];
@@ -45,7 +46,7 @@ Deno.serve(async (req) => {
   const admin = getAdminClient();
   const { data: order, error: orderError } = await admin
     .from("orders")
-    .select("id, customer_id, status")
+    .select("id, pos_order_id, customer_id, status, driver_id")
     .eq("id", order_id)
     .single();
   if (orderError || !order) return errorResponse("order not found", 404);
@@ -72,6 +73,20 @@ Deno.serve(async (req) => {
     .update({ status: "cancelled", cancellation_reason: reason, cancelled_by: caller.id })
     .eq("id", order_id);
   if (updateError) return errorResponse(updateError.message, 500);
+
+  // Only ever set once dispatch-order assigns a driver - a still-'preparing'
+  // order that gets cancelled never had a driver involved, nothing to alert.
+  if (order.driver_id) {
+    const { data: driver } = await admin.from("users").select("fcm_token").eq("id", order.driver_id).single();
+    if (driver?.fcm_token) {
+      await sendDriverPush(
+        driver.fcm_token,
+        "أوردر اتلغى",
+        `أوردر #${order.pos_order_id ?? order.id} اتلغى - ${reason}. متكملش توصيله.`,
+        { order_id: String(order_id), type: "cancelled" },
+      );
+    }
+  }
 
   return jsonResponse({ order_id, status: "cancelled" });
 });

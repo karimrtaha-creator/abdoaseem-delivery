@@ -6,6 +6,7 @@ import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { lookupSlaMinutes, minutesBetween, generateOtpCode } from "../_shared/sla.ts";
 import { sendOtpToCustomer } from "../_shared/notify.ts";
+import { sendDriverPush } from "../_shared/fcm.ts";
 
 const OTP_VALIDITY_MINUTES = 20;
 
@@ -38,7 +39,7 @@ Deno.serve(async (req) => {
 
   const { data: order, error: orderError } = await admin
     .from("orders")
-    .select("id, branch_id, status, dispatch_time, accepted_at, customer_phone")
+    .select("id, pos_order_id, branch_id, status, dispatch_time, accepted_at, customer_phone")
     .eq("id", order_id)
     .single();
   if (orderError || !order) return errorResponse("order not found", 404);
@@ -57,7 +58,7 @@ Deno.serve(async (req) => {
 
   const { data: driver, error: driverError } = await admin
     .from("users")
-    .select("id, role, branch_id, is_active")
+    .select("id, role, branch_id, is_active, fcm_token")
     .eq("id", driver_id)
     .single();
   if (driverError || !driver) return errorResponse("driver not found", 404);
@@ -65,7 +66,7 @@ Deno.serve(async (req) => {
     return errorResponse("driver_id is not an active driver assigned to your branch", 422);
   }
 
-  const slaMinutes = await lookupSlaMinutes(admin, delivery_fee_after_tax);
+  const slaMinutes = await lookupSlaMinutes(admin, delivery_fee_after_tax, order.branch_id);
   const dispatchTime = new Date();
   const prepTimeMinutes = minutesBetween(order.accepted_at, dispatchTime);
 
@@ -92,6 +93,15 @@ Deno.serve(async (req) => {
   if (otpError) return errorResponse(`order dispatched but OTP creation failed: ${otpError.message}`, 500);
 
   const sendResult = await sendOtpToCustomer(order.customer_phone, code, order_id);
+
+  if (driver.fcm_token) {
+    await sendDriverPush(
+      driver.fcm_token,
+      "أوردر جديد للتوصيل",
+      `أوردر #${order.pos_order_id ?? order.id} جاهز يتسلّم منك دلوقتي.`,
+      { order_id: String(order_id), type: "new_dispatch" },
+    );
+  }
 
   // The dispatcher has no legitimate reason to see the delivery code - it
   // exists to verify the driver actually reached the customer, so it never

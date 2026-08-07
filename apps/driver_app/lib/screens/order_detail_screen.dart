@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/driver_order.dart';
 import '../services/orders_service.dart';
+import 'location_map_screen.dart';
 import 'otp_confirm_screen.dart';
 
 class OrderDetailScreen extends StatefulWidget {
@@ -26,7 +28,12 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   Future<void> _load() async {
     final order = await _ordersService.fetchOrder(widget.orderId);
-    final address = await _ordersService.fetchCustomerAddress(order.customerId);
+    // address_id (the newer multi-address book) only exists for self-
+    // checkout customer orders - call_center phone orders never set it,
+    // so those keep falling back to the old single-address profile.
+    final address = order.addressId != null
+        ? await _ordersService.fetchSavedAddress(order.addressId!)
+        : await _ordersService.fetchCustomerAddress(order.customerId);
     if (!mounted) return;
     setState(() {
       _order = order;
@@ -38,6 +45,29 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   Future<void> _call(String phone) async {
     final uri = Uri(scheme: 'tel', path: phone);
     if (await canLaunchUrl(uri)) await launchUrl(uri);
+  }
+
+  Future<void> _openLocationMap() async {
+    final order = _order!;
+    final address = _address!;
+    final driverId = Supabase.instance.client.auth.currentUser!.id;
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => LocationMapScreen(
+          addressId: order.addressId!,
+          driverId: driverId,
+          initialLatitude: address['latitude'] as double?,
+          initialLongitude: address['longitude'] as double?,
+        ),
+      ),
+    );
+    if (saved == true) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('اتحفظ موقع العميل')),
+      );
+      _load();
+    }
   }
 
   @override
@@ -65,8 +95,12 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                     const SizedBox(height: 8),
                     if (address != null)
                       Text(
-                        'منطقة: ${address['area'] ?? '-'}\n'
-                        'عمارة: ${address['building'] ?? '-'} - دور: ${address['floor'] ?? '-'} - شقة: ${address['apartment'] ?? '-'}',
+                        [
+                          if (address['street'] != null) 'الشارع: ${address['street']}',
+                          if (address['landmark'] != null) 'علامة مميزة: ${address['landmark']}',
+                          'منطقة: ${address['area'] ?? '-'}',
+                          'عمارة: ${address['building'] ?? '-'} - دور: ${address['floor'] ?? '-'} - شقة: ${address['apartment'] ?? '-'}',
+                        ].join('\n'),
                       )
                     else
                       const Text('مفيش عنوان مسجل للعميل ده - العنوان اتاخد شفهيًا من الكول سنتر وقت الطلب.',
@@ -85,6 +119,16 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                         ),
                       ],
                     ),
+                    if (order.addressId != null && address != null) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _openLocationMap,
+                        icon: const Icon(Icons.location_pin),
+                        label: Text(
+                          address['latitude'] != null ? 'تعديل موقع العميل على الخريطة' : 'تثبيت موقع العميل على الخريطة',
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

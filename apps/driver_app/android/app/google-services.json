@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "889694678840",
+    "project_id": "abdoaseem-driver",
+    "storage_bucket": "abdoaseem-driver.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:889694678840:android:36519c37a6afada2119bcd",
+        "android_client_info": {
+          "package_name": "com.abdoaseem.abdoaseem_driver"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCop5azlctsgWS9FL9tv5vdMYcfq1fKgIo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

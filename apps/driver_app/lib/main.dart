@@ -1,13 +1,16 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_config.dart';
 import 'services/auth_service.dart';
 import 'services/profile_service.dart';
+import 'services/push_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/orders_list_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   await Supabase.initialize(url: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey);
   runApp(const DriverApp());
 }
@@ -42,6 +45,8 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   final _authService = AuthService();
   final _profileService = ProfileService();
+  final _pushService = PushService();
+  bool _pushInitStarted = false;
 
   @override
   Widget build(BuildContext context) {
@@ -83,6 +88,13 @@ class _AuthGateState extends State<AuthGate> {
                   ),
                 ),
               );
+            }
+            // Registers the device's push token once we know this is a
+            // real, active driver session - not on every rebuild, and not
+            // before we've confirmed the account is allowed to be here.
+            if (!_pushInitStarted) {
+              _pushInitStarted = true;
+              _pushService.init();
             }
             return const OrdersListScreen();
           },

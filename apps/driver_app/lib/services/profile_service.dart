@@ -29,4 +29,14 @@ class ProfileService {
         .maybeSingle();
     return row == null ? null : DriverProfile.fromMap(row);
   }
+
+  /// Lets dispatch-order/cancel-order push straight to this device - see
+  /// push_service.dart, called once per login and again on token refresh.
+  /// Already covered by the existing users_update_self RLS policy (0001),
+  /// no new policy needed.
+  Future<void> saveFcmToken(String token) async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) return;
+    await _client.from('users').update({'fcm_token': token}).eq('id', uid);
+  }
 }

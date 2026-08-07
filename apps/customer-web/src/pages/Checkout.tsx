@@ -55,7 +55,22 @@ export function Checkout() {
     () => resolveServingBranch(selectedAddress?.nearest_branch_id ?? null, branches),
     [selectedAddress, branches],
   );
-  const deliveryFee = servingBranch?.delivery_fee ?? 0;
+  const [zoneFee, setZoneFee] = useState<number | null>(null);
+  useEffect(() => {
+    if (!selectedAddress?.zone_id) {
+      setZoneFee(null);
+      return;
+    }
+    supabase
+      .from("delivery_zones")
+      .select("delivery_fee")
+      .eq("id", selectedAddress.zone_id)
+      .maybeSingle()
+      .then(({ data }) => setZoneFee(data?.delivery_fee ?? null));
+  }, [selectedAddress]);
+  // Mirrors create-order's own fallback order (zone fee, then flat branch
+  // fee) so what the customer sees here matches what actually gets charged.
+  const deliveryFee = zoneFee ?? servingBranch?.delivery_fee ?? 0;
 
   useEffect(() => {
     if (!authLoading && !session) navigate("/login");

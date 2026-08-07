@@ -2,26 +2,44 @@ import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // Section 4 / 9: sla_minutes is looked up from sla_tiers by
 // delivery_fee_after_tax, never computed from distance/GPS.
+//
+// sla_tiers is branch-scoped (0024) - most branches now have their own
+// tier rows (2 real patterns from the owner's spreadsheet), but a branch
+// with no tiers of its own (e.g. فرع مايو, still awaiting real numbers)
+// falls back to the original branch_id IS NULL rows that predate this.
 export async function lookupSlaMinutes(
   admin: SupabaseClient,
   deliveryFeeAfterTax: number,
+  branchId: number,
 ): Promise<number> {
-  const { data, error } = await admin
+  const { data: scoped, error: scopedError } = await admin
     .from("sla_tiers")
     .select("tier_id, min_price, max_price, sla_minutes")
+    .eq("branch_id", branchId)
     .lte("min_price", deliveryFeeAfterTax)
     .gte("max_price", deliveryFeeAfterTax)
     .order("tier_id", { ascending: true })
     .limit(1)
     .maybeSingle();
+  if (scopedError) throw new Error(`sla_tiers lookup failed: ${scopedError.message}`);
+  if (scoped) return scoped.sla_minutes as number;
 
-  if (error) throw new Error(`sla_tiers lookup failed: ${error.message}`);
-  if (!data) {
+  const { data: fallback, error: fallbackError } = await admin
+    .from("sla_tiers")
+    .select("tier_id, min_price, max_price, sla_minutes")
+    .is("branch_id", null)
+    .lte("min_price", deliveryFeeAfterTax)
+    .gte("max_price", deliveryFeeAfterTax)
+    .order("tier_id", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (fallbackError) throw new Error(`sla_tiers lookup failed: ${fallbackError.message}`);
+  if (!fallback) {
     throw new Error(
-      `no sla_tiers row covers delivery_fee_after_tax=${deliveryFeeAfterTax}`,
+      `no sla_tiers row (branch ${branchId} or global) covers delivery_fee_after_tax=${deliveryFeeAfterTax}`,
     );
   }
-  return data.sla_minutes as number;
+  return fallback.sla_minutes as number;
 }
 
 export function minutesBetween(from: string | Date, to: string | Date): number {

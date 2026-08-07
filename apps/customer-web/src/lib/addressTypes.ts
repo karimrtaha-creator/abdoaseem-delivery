@@ -10,6 +10,7 @@ export interface CustomerAddress {
   area: string | null;
   main_region_id: number | null;
   nearest_branch_id: number | null;
+  zone_id: number | null;
   alt_phone: string | null;
   alt_phone_has_whatsapp: boolean;
   latitude: number | null;
@@ -29,6 +30,13 @@ export interface Branch {
   is_delivery_available?: boolean;
   delivery_fallback_branch_id?: number | null;
   delivery_fee?: number;
+}
+
+export interface DeliveryZone {
+  id: number;
+  branch_id: number;
+  zone_name: string;
+  delivery_fee: number;
 }
 
 // The branch that will actually fulfil an address's order - if the

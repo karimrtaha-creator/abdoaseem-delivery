@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 import { useAuth } from "../lib/AuthContext";
-import { Branch, CustomerAddress, Region, formatAddressSummary } from "../lib/addressTypes";
+import { Branch, CustomerAddress, DeliveryZone, Region, formatAddressSummary } from "../lib/addressTypes";
 
 interface FormState {
   id: number | null;
@@ -14,6 +14,7 @@ interface FormState {
   landmark: string;
   main_region_id: string;
   nearest_branch_id: string;
+  zone_id: string;
   alt_phone: string;
   alt_phone_has_whatsapp: boolean;
   latitude: number | null;
@@ -30,6 +31,7 @@ const EMPTY_FORM: FormState = {
   landmark: "",
   main_region_id: "",
   nearest_branch_id: "",
+  zone_id: "",
   alt_phone: "",
   alt_phone_has_whatsapp: false,
   latitude: null,
@@ -50,6 +52,9 @@ export function Addresses() {
   const [error, setError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const [tableMissing, setTableMissing] = useState(false);
+  const [zones, setZones] = useState<DeliveryZone[]>([]);
+  const [zoneSearch, setZoneSearch] = useState("");
+  const [zoneListOpen, setZoneListOpen] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !session) navigate("/login");
@@ -79,8 +84,33 @@ export function Addresses() {
     });
   }, [session]);
 
+  // Zones are scoped to whichever branch is picked - loaded fresh instead
+  // of filtering one big upfront fetch, since a branch can carry 100+ of
+  // the real 644 zones and most never need to be in memory at once.
+  useEffect(() => {
+    if (!form.nearest_branch_id) {
+      setZones([]);
+      return;
+    }
+    supabase
+      .from("delivery_zones")
+      .select("id, branch_id, zone_name, delivery_fee")
+      .eq("branch_id", Number(form.nearest_branch_id))
+      .order("zone_name")
+      .then(({ data }) => {
+        const loaded = (data as DeliveryZone[]) ?? [];
+        setZones(loaded);
+        if (form.zone_id && !zoneSearch) {
+          const match = loaded.find((z) => z.id === Number(form.zone_id));
+          if (match) setZoneSearch(match.zone_name);
+        }
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.nearest_branch_id]);
+
   function openNewForm() {
     setForm(EMPTY_FORM);
+    setZoneSearch("");
     setFormOpen(true);
     setError(null);
   }
@@ -96,14 +126,27 @@ export function Addresses() {
       landmark: addr.landmark ?? "",
       main_region_id: addr.main_region_id ? String(addr.main_region_id) : "",
       nearest_branch_id: addr.nearest_branch_id ? String(addr.nearest_branch_id) : "",
+      zone_id: addr.zone_id ? String(addr.zone_id) : "",
       alt_phone: addr.alt_phone ?? "",
       alt_phone_has_whatsapp: addr.alt_phone_has_whatsapp,
       latitude: addr.latitude,
       longitude: addr.longitude,
     });
+    setZoneSearch("");
     setFormOpen(true);
     setError(null);
   }
+
+  function selectZone(zone: DeliveryZone) {
+    setForm((f) => ({ ...f, zone_id: String(zone.id) }));
+    setZoneSearch(zone.zone_name);
+    setZoneListOpen(false);
+  }
+
+  const selectedZone = zones.find((z) => z.id === Number(form.zone_id)) ?? null;
+  const filteredZones = zoneSearch.trim()
+    ? zones.filter((z) => z.zone_name.includes(zoneSearch.trim())).slice(0, 30)
+    : zones.slice(0, 30);
 
   function useMyLocation() {
     if (!navigator.geolocation) {
@@ -153,6 +196,7 @@ export function Addresses() {
       landmark: form.landmark.trim() || null,
       main_region_id: Number(form.main_region_id),
       nearest_branch_id: Number(form.nearest_branch_id),
+      zone_id: form.zone_id ? Number(form.zone_id) : null,
       alt_phone: form.alt_phone ? form.alt_phone.replace(/\D/g, "") : null,
       alt_phone_has_whatsapp: form.alt_phone ? form.alt_phone_has_whatsapp : false,
       latitude: form.latitude,
@@ -292,7 +336,14 @@ export function Addresses() {
             </div>
             <div className="field">
               <label htmlFor="branch">أقرب فرع</label>
-              <select id="branch" value={form.nearest_branch_id} onChange={(e) => setForm({ ...form, nearest_branch_id: e.target.value })}>
+              <select
+                id="branch"
+                value={form.nearest_branch_id}
+                onChange={(e) => {
+                  setForm({ ...form, nearest_branch_id: e.target.value, zone_id: "" });
+                  setZoneSearch("");
+                }}
+              >
                 <option value="">اختار الفرع</option>
                 {branchesInRegion.map((b) => (
                   <option key={b.id} value={b.id}>
@@ -302,6 +353,47 @@ export function Addresses() {
               </select>
             </div>
           </div>
+
+          {form.nearest_branch_id && (
+            <div className="field zone-picker">
+              <label htmlFor="zone">منطقتك (لتحديد سعر التوصيل بدقة - اختياري)</label>
+              <input
+                id="zone"
+                placeholder="اكتب اسم الشارع أو المنطقة..."
+                value={zoneSearch}
+                onChange={(e) => {
+                  setZoneSearch(e.target.value);
+                  setZoneListOpen(true);
+                  if (form.zone_id) setForm((f) => ({ ...f, zone_id: "" }));
+                }}
+                onFocus={() => setZoneListOpen(true)}
+                onBlur={() => setTimeout(() => setZoneListOpen(false), 150)}
+                autoComplete="off"
+              />
+              {zoneListOpen && filteredZones.length > 0 && (
+                <ul className="zone-dropdown">
+                  {filteredZones.map((z) => (
+                    <li key={z.id}>
+                      <button type="button" onMouseDown={() => selectZone(z)}>
+                        <span>{z.zone_name}</span>
+                        <span className="muted">{z.delivery_fee}ج</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {selectedZone && (
+                <p className="muted" style={{ margin: "4px 0 0" }}>
+                  سعر التوصيل من الفرع ده لمنطقتك: {selectedZone.delivery_fee}ج
+                </p>
+              )}
+              {!selectedZone && zones.length === 0 && (
+                <p className="muted" style={{ margin: "4px 0 0" }}>
+                  الفرع ده لسه معندوش قايمة مناطق مفصّلة - هيتحسب سعر التوصيل العام للفرع.
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="field">
             <label htmlFor="alt_phone">رقم بديل (اختياري)</label>

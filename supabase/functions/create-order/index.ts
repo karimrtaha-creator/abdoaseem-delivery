@@ -67,6 +67,7 @@ async function finishOrder(
     paymentProofUrl: string | null;
     redirectedFrom?: string | null;
     servingBranchName?: string;
+    deliveryFeeOverride?: number | null;
   },
 ): Promise<Response> {
   const menuItemIds = args.items.filter((i) => i.menu_item_id != null).map((i) => i.menu_item_id as number);
@@ -163,15 +164,22 @@ async function finishOrder(
     }
   }
 
-  // Delivery fee is a per-branch price table (general_manager-managed,
-  // BranchManagement.tsx), never something the client can set - re-fetched
-  // here the same "never trust the client" way prices/branch routing are.
-  const { data: feeBranch, error: feeBranchError } = await admin
-    .from("branches")
-    .select("delivery_fee")
-    .eq("id", args.branch_id)
-    .single();
-  if (feeBranchError) return errorResponse(feeBranchError.message, 500);
+  // Delivery fee: prefer the address's specific zone fee (delivery_zones,
+  // 0024/0025 - real per-street pricing from the owner) when the address
+  // has one; branches.delivery_fee (general_manager-managed,
+  // BranchManagement.tsx) is the fallback for addresses/branches with no
+  // zone data yet. Never something the client can set - re-fetched here
+  // the same "never trust the client" way prices/branch routing are.
+  let deliveryFee = args.deliveryFeeOverride ?? null;
+  if (deliveryFee == null) {
+    const { data: feeBranch, error: feeBranchError } = await admin
+      .from("branches")
+      .select("delivery_fee")
+      .eq("id", args.branch_id)
+      .single();
+    if (feeBranchError) return errorResponse(feeBranchError.message, 500);
+    deliveryFee = feeBranch?.delivery_fee ?? 0;
+  }
 
   const { data: order, error: orderError } = await admin
     .from("orders")
@@ -185,7 +193,7 @@ async function finishOrder(
       order_time: new Date().toISOString(),
       payment_method: args.paymentMethod,
       payment_proof_url: args.paymentProofUrl,
-      delivery_fee_after_tax: feeBranch?.delivery_fee ?? 0,
+      delivery_fee_after_tax: deliveryFee,
     })
     .select("id")
     .single();
@@ -204,7 +212,7 @@ async function finishOrder(
     items_count: orderItemsToInsert.length,
     redirected_from: args.redirectedFrom ?? null,
     serving_branch_name: args.servingBranchName ?? null,
-    delivery_fee: feeBranch?.delivery_fee ?? 0,
+    delivery_fee: deliveryFee,
   });
 }
 
@@ -273,12 +281,23 @@ Deno.serve(async (req) => {
     if (!body.address_id) return errorResponse("address_id is required");
     const { data: address, error: addressError } = await admin
       .from("customer_addresses")
-      .select("id, user_id, nearest_branch_id")
+      .select("id, user_id, nearest_branch_id, zone_id")
       .eq("id", body.address_id)
       .single();
     if (addressError || !address) return errorResponse("address not found", 404);
     if (address.user_id !== caller.id) return errorResponse("this address does not belong to you", 403);
     if (!address.nearest_branch_id) return errorResponse("this address has no nearest branch set", 422);
+
+    let zoneDeliveryFee: number | null = null;
+    if (address.zone_id) {
+      const { data: zone, error: zoneError } = await admin
+        .from("delivery_zones")
+        .select("delivery_fee")
+        .eq("id", address.zone_id)
+        .single();
+      if (zoneError) return errorResponse(zoneError.message, 500);
+      zoneDeliveryFee = zone?.delivery_fee ?? null;
+    }
 
     const { data: branch, error: branchError } = await admin
       .from("branches")
@@ -319,6 +338,7 @@ Deno.serve(async (req) => {
       paymentProofUrl: body.payment_proof_url ?? null,
       redirectedFrom,
       servingBranchName: servingBranch.name,
+      deliveryFeeOverride: zoneDeliveryFee,
     });
   }
 

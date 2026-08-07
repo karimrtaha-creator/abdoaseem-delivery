@@ -2,6 +2,7 @@ class DriverOrder {
   final int id;
   final String? posOrderId;
   final String? customerId;
+  final int? addressId;
   final String customerPhone;
   final String status; // out_for_delivery | delayed | delivered | ...
   final DateTime? dispatchTime;
@@ -14,6 +15,7 @@ class DriverOrder {
     required this.id,
     required this.posOrderId,
     required this.customerId,
+    required this.addressId,
     required this.customerPhone,
     required this.status,
     required this.dispatchTime,
@@ -28,6 +30,7 @@ class DriverOrder {
       id: map['id'] as int,
       posOrderId: map['pos_order_id'] as String?,
       customerId: map['customer_id'] as String?,
+      addressId: map['address_id'] as int?,
       customerPhone: map['customer_phone'] as String? ?? '',
       status: map['status'] as String? ?? '',
       dispatchTime: map['dispatch_time'] != null

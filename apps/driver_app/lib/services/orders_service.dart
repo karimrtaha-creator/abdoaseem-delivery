@@ -5,7 +5,7 @@ class OrdersService {
   final SupabaseClient _client = Supabase.instance.client;
 
   static const _columns =
-      'id, pos_order_id, customer_id, customer_phone, status, dispatch_time, sla_minutes, delivered_time, delay_minutes, is_delayed';
+      'id, pos_order_id, customer_id, address_id, customer_phone, status, dispatch_time, sla_minutes, delivered_time, delay_minutes, is_delayed';
 
   /// Realtime feed of this driver's currently-active deliveries. Section 6:
   /// the order appears here automatically the moment the dispatcher confirms
@@ -35,6 +35,39 @@ class OrdersService {
         .eq('user_id', customerId)
         .maybeSingle();
     return row;
+  }
+
+  /// The newer multi-address book (see migration 0005) - only self-checkout
+  /// customer orders carry an address_id; call_center phone orders never
+  /// set one (the address was taken verbally, nothing to look up here),
+  /// which is why callers fall back to fetchCustomerAddress for those.
+  Future<Map<String, dynamic>?> fetchSavedAddress(int addressId) async {
+    final row = await _client
+        .from('customer_addresses')
+        .select('building, floor, apartment, area, street, landmark, latitude, longitude')
+        .eq('id', addressId)
+        .maybeSingle();
+    return row;
+  }
+
+  /// Pins the customer's real delivery location for this address, standing
+  /// at the door. RLS (customer_addresses_update_driver_current_order,
+  /// migration 0005) already restricts this to a driver updating only the
+  /// location fields on an address tied to one of their own orders - the
+  /// same design that migration originally shipped with, just wired up
+  /// from the app for the first time here.
+  Future<void> saveAddressLocation({
+    required int addressId,
+    required double latitude,
+    required double longitude,
+    required String driverId,
+  }) async {
+    await _client.from('customer_addresses').update({
+      'latitude': latitude,
+      'longitude': longitude,
+      'location_saved_at': DateTime.now().toUtc().toIso8601String(),
+      'location_saved_by': driverId,
+    }).eq('id', addressId);
   }
 
   /// Section 6 "سجل الأداء اليومي": today's delivered orders for this

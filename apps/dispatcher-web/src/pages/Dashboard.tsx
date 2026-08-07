@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { supabase } from "../supabaseClient";
 import type { Profile } from "../lib/useProfile";
 import { CHART_COLORS } from "../lib/chartColors";
+import { playNewOrderChime } from "../lib/alertSound";
 
 interface OrderRow {
   id: number;
@@ -17,6 +18,7 @@ interface OrderRow {
   delay_minutes: number | null;
   is_delayed: boolean | null;
   payment_method: string;
+  order_source: string;
 }
 
 interface Branch {
@@ -56,18 +58,39 @@ export function Dashboard({ profile }: { profile: Profile }) {
   const [drivers, setDrivers] = useState<DriverLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [focusBranchId, setFocusBranchId] = useState<number | "all">("all");
+  // Call-center orders happen over the phone, off-screen for a general_
+  // manager/team_leader who's only looking at this dashboard - unlike
+  // Dispatch.tsx/AcceptanceLobby.tsx there's no natural "open it to
+  // acknowledge" action here, so this is a one-shot chime + dismissible
+  // list per arrival rather than a repeating alarm nobody can silence.
+  const [newCallCenterOrders, setNewCallCenterOrders] = useState<OrderRow[]>([]);
+  const knownOrderIds = useRef<Set<number> | null>(null);
 
   async function load() {
     const [ordersRes, branchesRes, driversRes] = await Promise.all([
       supabase
         .from("orders")
         .select(
-          "id, pos_order_id, status, branch_id, driver_id, order_time, dispatch_time, delivered_time, sla_minutes, delay_minutes, is_delayed, payment_method",
+          "id, pos_order_id, status, branch_id, driver_id, order_time, dispatch_time, delivered_time, sla_minutes, delay_minutes, is_delayed, payment_method, order_source",
         ),
       supabase.from("branches").select("id, name, region_id"),
       supabase.from("users").select("id, name").eq("role", "driver"),
     ]);
-    setOrders((ordersRes.data as OrderRow[]) ?? []);
+    const freshOrders = (ordersRes.data as OrderRow[]) ?? [];
+
+    const freshIds = new Set(freshOrders.map((o) => o.id));
+    if (knownOrderIds.current) {
+      const newlyArrivedCallCenter = freshOrders.filter(
+        (o) => !knownOrderIds.current!.has(o.id) && o.order_source === "call_center",
+      );
+      if (newlyArrivedCallCenter.length > 0) {
+        playNewOrderChime();
+        setNewCallCenterOrders((prev) => [...newlyArrivedCallCenter, ...prev]);
+      }
+    }
+    knownOrderIds.current = freshIds;
+
+    setOrders(freshOrders);
     setBranches((branchesRes.data as Branch[]) ?? []);
     setDrivers((driversRes.data as DriverLite[]) ?? []);
     setLoading(false);
@@ -84,6 +107,10 @@ export function Dashboard({ profile }: { profile: Profile }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function dismissCallCenterAlert(orderId: number) {
+    setNewCallCenterOrders((prev) => prev.filter((o) => o.id !== orderId));
+  }
 
   // Branches this role is even allowed to focus on - drives the dropdown
   // options. Actual data scoping already happened server-side via RLS
@@ -174,6 +201,20 @@ export function Dashboard({ profile }: { profile: Profile }) {
 
   return (
     <div>
+      {newCallCenterOrders.length > 0 && (
+        <div className="card" style={{ borderColor: "var(--color-tomato)" }}>
+          <h2 style={{ margin: "0 0 8px" }}>أوردرات جديدة من الكول سنتر</h2>
+          {newCallCenterOrders.map((o) => (
+            <div key={o.id} className="stat-row" style={{ alignItems: "center", marginBottom: 6 }}>
+              <span>أوردر #{o.pos_order_id ?? o.id}</span>
+              <button className="btn-link" onClick={() => dismissCallCenterAlert(o.id)}>
+                تمام
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {profile.role !== "branch_manager" && scopedBranches.length > 1 && (
         <div className="card">
           <label>
