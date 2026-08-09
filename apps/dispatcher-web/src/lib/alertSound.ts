@@ -37,3 +37,11 @@ export function playPrepDelayAlarm() {
   tone(440, 0.18, 0.12);
   tone(440, 0.36, 0.12);
 }
+
+/** A customer cancelled their own pending order: distinct falling tone, so
+ * it's never confused with the rising new-order chime or the flat prep alarm. */
+export function playCancellationAlert() {
+  tone(660, 0, 0.14);
+  tone(523, 0.16, 0.14);
+  tone(392, 0.32, 0.22);
+}

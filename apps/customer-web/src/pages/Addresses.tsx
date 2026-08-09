@@ -376,7 +376,6 @@ export function Addresses() {
                     <li key={z.id}>
                       <button type="button" onMouseDown={() => selectZone(z)}>
                         <span>{z.zone_name}</span>
-                        <span className="muted">{z.delivery_fee}ج</span>
                       </button>
                     </li>
                   ))}

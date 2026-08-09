@@ -150,8 +150,14 @@ function OrderCard({
         <p className="error-text">{ORDER_STATUS_LABELS[order.status]}</p>
       )}
 
-      {order.status === "cancelled" && order.cancellation_reason && (
-        <p className="muted">سبب الإلغاء: {order.cancellation_reason}</p>
+      {order.status === "cancelled" && (
+        <p className="muted">
+          الأوردر اتلغى. لو محتاج تفاصيل عن السبب،{" "}
+          <a href={WHATSAPP_HELP_URL} target="_blank" rel="noreferrer">
+            كلمنا
+          </a>
+          .
+        </p>
       )}
       {order.status === "delayed" && <p className="error-text">الطلب متأخر شوية عن المتوقع، هيوصلك في أقرب وقت</p>}
 

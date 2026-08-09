@@ -1,5 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../supabaseClient";
+import { playNewOrderChime, playCancellationAlert } from "../lib/alertSound";
+
+// How often the "new pending order" alarm repeats while anything is still
+// waiting - matches Dispatch.tsx's own CHIME_REPEAT_MS.
+const CHIME_REPEAT_MS = 4000;
 
 interface Branch {
   id: number;
@@ -64,6 +69,13 @@ export function AcceptanceLobby() {
   const [orderItemsByOrder, setOrderItemsByOrder] = useState<Map<number, OrderItemRow[]>>(new Map());
   const [cancelOpenFor, setCancelOpenFor] = useState<number | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  // Which pending-acceptance orders we already knew about, so a fresh
+  // load() can tell "still waiting" apart from "just disappeared" - and,
+  // for the ones that disappeared, whether that was an accept/reject or
+  // the customer cancelling it themselves (see the follow-up status check
+  // in loadAll below).
+  const knownPendingIds = useRef<Set<number> | null>(null);
+  const [customerCancelledIds, setCustomerCancelledIds] = useState<number[]>([]);
 
   async function loadAll() {
     const startOfDay = new Date();
@@ -89,6 +101,25 @@ export function AcceptanceLobby() {
 
     const pending = (pendingRes.data as PendingOrder[]) ?? [];
     const ongoing = (ongoingRes.data as OngoingOrder[]) ?? [];
+
+    // Diff against the previous snapshot: any pending order that vanished
+    // without going through accept/reject on *this* client (another staff
+    // member, or the customer themselves) needs a status check to tell
+    // "got accepted/rejected elsewhere" apart from "customer cancelled it" -
+    // only the latter gets its own alert here.
+    if (knownPendingIds.current) {
+      const freshIds = new Set(pending.map((o) => o.id));
+      const disappeared = [...knownPendingIds.current].filter((id) => !freshIds.has(id));
+      if (disappeared.length > 0) {
+        const { data: statusRows } = await supabase.from("orders").select("id, status").in("id", disappeared);
+        const cancelled = (statusRows ?? []).filter((r) => r.status === "cancelled").map((r) => r.id);
+        if (cancelled.length > 0) {
+          playCancellationAlert();
+          setCustomerCancelledIds((prev) => [...cancelled, ...prev]);
+        }
+      }
+    }
+    knownPendingIds.current = new Set(pending.map((o) => o.id));
 
     setBranches((branchesRes.data as Branch[]) ?? []);
     setPendingOrders(pending);
@@ -138,6 +169,21 @@ export function AcceptanceLobby() {
     const map = new Map(branches.map((b) => [b.id, b.name]));
     return (id: number) => map.get(id) ?? `فرع #${id}`;
   }, [branches]);
+
+  // Repeats for as long as anything is still waiting - never a one-shot
+  // ping, exactly per the ask: it doesn't stop until every pending order
+  // has actually been accepted or rejected.
+  const hasPending = pendingOrders.length > 0;
+  useEffect(() => {
+    if (!hasPending) return;
+    playNewOrderChime();
+    const timer = setInterval(playNewOrderChime, CHIME_REPEAT_MS);
+    return () => clearInterval(timer);
+  }, [hasPending]);
+
+  function dismissCancelledAlert(orderId: number) {
+    setCustomerCancelledIds((prev) => prev.filter((id) => id !== orderId));
+  }
 
   async function loadProofUrl(order: PendingOrder) {
     if (!order.payment_proof_url || proofUrls.has(order.id)) return;
@@ -202,6 +248,20 @@ export function AcceptanceLobby() {
 
   return (
     <div>
+      {customerCancelledIds.length > 0 && (
+        <div className="card" style={{ borderColor: "var(--color-tomato)" }}>
+          <h2 style={{ margin: "0 0 8px" }}>العميل لغى الأوردر بنفسه</h2>
+          {customerCancelledIds.map((id) => (
+            <div key={id} className="stat-row" style={{ alignItems: "center", marginBottom: 6 }}>
+              <span>أوردر #{id}</span>
+              <button className="btn-link" onClick={() => dismissCancelledAlert(id)}>
+                تمام
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="card">
         <h2>ملخص اليوم</h2>
         <p>

@@ -3,7 +3,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { supabase } from "../supabaseClient";
 import type { Profile } from "../lib/useProfile";
 import { CHART_COLORS } from "../lib/chartColors";
-import { playNewOrderChime } from "../lib/alertSound";
+import { playNewOrderChime, playCancellationAlert } from "../lib/alertSound";
 
 interface OrderRow {
   id: number;
@@ -64,7 +64,11 @@ export function Dashboard({ profile }: { profile: Profile }) {
   // acknowledge" action here, so this is a one-shot chime + dismissible
   // list per arrival rather than a repeating alarm nobody can silence.
   const [newCallCenterOrders, setNewCallCenterOrders] = useState<OrderRow[]>([]);
-  const knownOrderIds = useRef<Set<number> | null>(null);
+  const [newlyCancelledOrders, setNewlyCancelledOrders] = useState<OrderRow[]>([]);
+  // Tracks each known order's last-seen status, not just its id - a plain
+  // id set can tell "new" from "known", but catching a cancellation needs
+  // to know what the order's status *was* the previous time around.
+  const knownStatusById = useRef<Map<number, string> | null>(null);
 
   async function load() {
     const [ordersRes, branchesRes, driversRes] = await Promise.all([
@@ -78,17 +82,24 @@ export function Dashboard({ profile }: { profile: Profile }) {
     ]);
     const freshOrders = (ordersRes.data as OrderRow[]) ?? [];
 
-    const freshIds = new Set(freshOrders.map((o) => o.id));
-    if (knownOrderIds.current) {
+    if (knownStatusById.current) {
+      const previous = knownStatusById.current;
       const newlyArrivedCallCenter = freshOrders.filter(
-        (o) => !knownOrderIds.current!.has(o.id) && o.order_source === "call_center",
+        (o) => !previous.has(o.id) && o.order_source === "call_center",
+      );
+      const newlyCancelled = freshOrders.filter(
+        (o) => previous.has(o.id) && previous.get(o.id) !== "cancelled" && o.status === "cancelled",
       );
       if (newlyArrivedCallCenter.length > 0) {
         playNewOrderChime();
         setNewCallCenterOrders((prev) => [...newlyArrivedCallCenter, ...prev]);
       }
+      if (newlyCancelled.length > 0) {
+        playCancellationAlert();
+        setNewlyCancelledOrders((prev) => [...newlyCancelled, ...prev]);
+      }
     }
-    knownOrderIds.current = freshIds;
+    knownStatusById.current = new Map(freshOrders.map((o) => [o.id, o.status]));
 
     setOrders(freshOrders);
     setBranches((branchesRes.data as Branch[]) ?? []);
@@ -110,6 +121,10 @@ export function Dashboard({ profile }: { profile: Profile }) {
 
   function dismissCallCenterAlert(orderId: number) {
     setNewCallCenterOrders((prev) => prev.filter((o) => o.id !== orderId));
+  }
+
+  function dismissCancelledAlert(orderId: number) {
+    setNewlyCancelledOrders((prev) => prev.filter((o) => o.id !== orderId));
   }
 
   // Branches this role is even allowed to focus on - drives the dropdown
@@ -208,6 +223,20 @@ export function Dashboard({ profile }: { profile: Profile }) {
             <div key={o.id} className="stat-row" style={{ alignItems: "center", marginBottom: 6 }}>
               <span>أوردر #{o.pos_order_id ?? o.id}</span>
               <button className="btn-link" onClick={() => dismissCallCenterAlert(o.id)}>
+                تمام
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {newlyCancelledOrders.length > 0 && (
+        <div className="card" style={{ borderColor: "var(--danger)" }}>
+          <h2 style={{ margin: "0 0 8px" }}>أوردر اتلغى</h2>
+          {newlyCancelledOrders.map((o) => (
+            <div key={o.id} className="stat-row" style={{ alignItems: "center", marginBottom: 6 }}>
+              <span>أوردر #{o.pos_order_id ?? o.id}</span>
+              <button className="btn-link" onClick={() => dismissCancelledAlert(o.id)}>
                 تمام
               </button>
             </div>

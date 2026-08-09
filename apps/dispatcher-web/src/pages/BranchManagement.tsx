@@ -7,6 +7,7 @@ interface Branch {
   region_id: number | null;
   is_delivery_available: boolean;
   delivery_fee: number;
+  photo_url: string | null;
 }
 
 interface Region {
@@ -50,10 +51,11 @@ export function BranchManagement() {
   const [pickRegionManager, setPickRegionManager] = useState<Record<number, string>>({});
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [feeDrafts, setFeeDrafts] = useState<Record<number, string>>({});
+  const [uploadingPhotoId, setUploadingPhotoId] = useState<number | null>(null);
 
   async function load() {
     const [branchesRes, regionsRes, staffRes] = await Promise.all([
-      supabase.from("branches").select("id, name, region_id, is_delivery_available, delivery_fee").order("name"),
+      supabase.from("branches").select("id, name, region_id, is_delivery_available, delivery_fee, photo_url").order("name"),
       supabase.from("regions").select("id, name").order("name"),
       supabase.from("users").select("id, name, phone, role, branch_id, region_id").neq("role", "customer").order("name"),
     ]);
@@ -131,6 +133,31 @@ export function BranchManagement() {
     setBusyKey(null);
     if (updateError) return setError(updateError.message);
     load();
+  }
+
+  async function uploadBranchPhoto(branch: Branch, file: File) {
+    setError(null);
+    setUploadingPhotoId(branch.id);
+    try {
+      const ext = file.name.split(".").pop() ?? "jpg";
+      const path = `${branch.id}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from("branch-images").upload(path, file, {
+        upsert: true,
+        cacheControl: "3600",
+      });
+      if (uploadError) throw new Error(uploadError.message);
+      const { data: publicUrlData } = supabase.storage.from("branch-images").getPublicUrl(path);
+      // cache-bust so the new photo shows immediately instead of the
+      // previous upload's cached response at the same path
+      const url = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+      const { error: updateError } = await supabase.from("branches").update({ photo_url: url }).eq("id", branch.id);
+      if (updateError) throw new Error(updateError.message);
+      setBranches((prev) => prev.map((b) => (b.id === branch.id ? { ...b, photo_url: url } : b)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "فشل رفع الصورة");
+    } finally {
+      setUploadingPhotoId(null);
+    }
   }
 
   async function assignBranchManager(branchId: number) {
@@ -277,6 +304,7 @@ export function BranchManagement() {
             <thead>
               <tr>
                 <th>الفرع</th>
+                <th>صورة الفرع</th>
                 <th>المنطقة</th>
                 <th>مدير الفرع</th>
                 <th>متاح للتوصيل</th>
@@ -290,6 +318,33 @@ export function BranchManagement() {
                 return (
                   <tr key={b.id}>
                     <td>{b.name}</td>
+                    <td>
+                      <div className="actions-cell">
+                        {b.photo_url ? (
+                          <img
+                            src={b.photo_url}
+                            alt={b.name}
+                            style={{ width: "90px", height: "60px", objectFit: "cover", borderRadius: "6px" }}
+                          />
+                        ) : (
+                          <span className="muted">مفيش صورة</span>
+                        )}
+                        <label className="btn-sm btn-primary" style={{ cursor: "pointer" }}>
+                          {uploadingPhotoId === b.id ? "جاري الرفع..." : b.photo_url ? "تغيير" : "رفع صورة"}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            style={{ display: "none" }}
+                            disabled={uploadingPhotoId === b.id}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) uploadBranchPhoto(b, file);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </td>
                     <td>{regionName(b.region_id)}</td>
                     <td className={manager ? undefined : "muted"}>{manager ? manager.name : "مفيش مدير معيّن"}</td>
                     <td>
