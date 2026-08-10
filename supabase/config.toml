@@ -8,3 +8,7 @@
 # anything, so it's not actually open to the public.
 [functions.check-sla-breaches]
 verify_jwt = false
+
+# Same cron-only reasoning as check-sla-breaches above.
+[functions.check-driver-proximity]
+verify_jwt = false

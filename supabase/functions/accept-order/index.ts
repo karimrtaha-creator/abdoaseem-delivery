@@ -4,6 +4,7 @@
 // note) are out of scope here.
 import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
+import { sendPush } from "../_shared/fcm.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -29,7 +30,7 @@ Deno.serve(async (req) => {
   const admin = getAdminClient();
   const { data: order, error: orderError } = await admin
     .from("orders")
-    .select("id, status, payment_method, payment_proof_url")
+    .select("id, pos_order_id, status, payment_method, payment_proof_url, customer_id")
     .eq("id", order_id)
     .single();
 
@@ -65,5 +66,18 @@ Deno.serve(async (req) => {
     .eq("id", order_id);
 
   if (updateError) return errorResponse(updateError.message, 500);
+
+  const { data: customer } = await admin.from("users").select("fcm_token").eq("id", order.customer_id).single();
+  if (customer?.fcm_token) {
+    const webUrl = Deno.env.get("CUSTOMER_WEB_URL");
+    await sendPush(
+      customer.fcm_token,
+      "الأوردر اتقبل",
+      `أوردر #${order.pos_order_id ?? order.id} جاري تحضيره دلوقتي.`,
+      { order_id: String(order_id), type: "accepted" },
+      webUrl ? `${webUrl}/orders` : undefined,
+    );
+  }
+
   return jsonResponse({ order_id, status: "preparing" });
 });

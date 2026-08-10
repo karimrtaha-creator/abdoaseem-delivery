@@ -1,11 +1,13 @@
-// Real push delivery for the driver app (new dispatch / staff cancellation
-// of an order already out for delivery) - see _shared/notify.ts's own
-// header, which documents that this project previously had zero working
-// notification infrastructure. This talks to Firebase Cloud Messaging's
-// HTTP v1 API directly (no Firebase Admin SDK exists for Deno), which
-// means doing the OAuth2 service-account exchange by hand: sign a short-
-// lived JWT with the service account's private key, trade it for an
-// access token, then POST the actual message.
+// Real push delivery - to the driver app (new dispatch / staff
+// cancellation) and to customer-web (order accepted/dispatched/driver
+// nearby, via the browser's Web Push, same Firebase project as the
+// driver app's Android app) - see _shared/notify.ts's own header, which
+// documents that this project previously had zero working notification
+// infrastructure. This talks to Firebase Cloud Messaging's HTTP v1 API
+// directly (no Firebase Admin SDK exists for Deno), which means doing
+// the OAuth2 service-account exchange by hand: sign a short-lived JWT
+// with the service account's private key, trade it for an access token,
+// then POST the actual message.
 //
 // Credentials come from Supabase secrets (FCM_PROJECT_ID/FCM_CLIENT_EMAIL/
 // FCM_PRIVATE_KEY, set via `supabase secrets set` - never committed to a
@@ -97,11 +99,17 @@ async function getAccessToken(): Promise<string> {
  * work (dispatching/cancelling an order), so every failure is caught and
  * logged instead.
  */
-export async function sendDriverPush(
+export async function sendPush(
   fcmToken: string,
   title: string,
   body: string,
   data: Record<string, string> = {},
+  // Only meaningful for a Web token (customer-web) - opened when the
+  // customer taps the notification. Android ignores this block entirely,
+  // same reasoning as why the android block below is harmless to send
+  // even when the target is a Web token: FCM only applies whichever
+  // platform-specific block matches the receiving token.
+  webLink?: string,
 ): Promise<void> {
   const projectId = Deno.env.get("FCM_PROJECT_ID");
   if (!projectId) {
@@ -127,6 +135,7 @@ export async function sendDriverPush(
               priority: "high",
               notification: { channel_id: "driver_alerts", sound: "default" },
             },
+            webpush: webLink ? { fcm_options: { link: webLink } } : undefined,
           },
         }),
       },

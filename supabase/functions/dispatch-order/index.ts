@@ -6,7 +6,7 @@ import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { lookupSlaMinutes, minutesBetween, generateOtpCode } from "../_shared/sla.ts";
 import { sendOtpToCustomer } from "../_shared/notify.ts";
-import { sendDriverPush } from "../_shared/fcm.ts";
+import { sendPush } from "../_shared/fcm.ts";
 
 const OTP_VALIDITY_MINUTES = 20;
 
@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
 
   const { data: order, error: orderError } = await admin
     .from("orders")
-    .select("id, pos_order_id, branch_id, status, dispatch_time, accepted_at, customer_phone")
+    .select("id, pos_order_id, branch_id, status, dispatch_time, accepted_at, customer_phone, customer_id")
     .eq("id", order_id)
     .single();
   if (orderError || !order) return errorResponse("order not found", 404);
@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
 
   const { data: driver, error: driverError } = await admin
     .from("users")
-    .select("id, role, branch_id, is_active, fcm_token")
+    .select("id, name, role, branch_id, is_active, fcm_token")
     .eq("id", driver_id)
     .single();
   if (driverError || !driver) return errorResponse("driver not found", 404);
@@ -95,11 +95,23 @@ Deno.serve(async (req) => {
   const sendResult = await sendOtpToCustomer(order.customer_phone, code, order_id);
 
   if (driver.fcm_token) {
-    await sendDriverPush(
+    await sendPush(
       driver.fcm_token,
       "أوردر جديد للتوصيل",
       `أوردر #${order.pos_order_id ?? order.id} جاهز يتسلّم منك دلوقتي.`,
       { order_id: String(order_id), type: "new_dispatch" },
+    );
+  }
+
+  const { data: customer } = await admin.from("users").select("fcm_token").eq("id", order.customer_id).single();
+  if (customer?.fcm_token) {
+    const webUrl = Deno.env.get("CUSTOMER_WEB_URL");
+    await sendPush(
+      customer.fcm_token,
+      "الأوردر في الطريق",
+      `المندوب ${driver.name} خارج لتوصيل أوردر #${order.pos_order_id ?? order.id} دلوقتي.`,
+      { order_id: String(order_id), type: "dispatched" },
+      webUrl ? `${webUrl}/orders` : undefined,
     );
   }
 

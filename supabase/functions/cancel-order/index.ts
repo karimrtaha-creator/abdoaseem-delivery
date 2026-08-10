@@ -14,7 +14,7 @@
 // order later can see exactly why it was cancelled.
 import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
-import { sendDriverPush } from "../_shared/fcm.ts";
+import { sendPush } from "../_shared/fcm.ts";
 
 const CUSTOMER_CANCELLABLE_STATUSES = ["pending_acceptance"];
 const STAFF_CANCELLABLE_STATUSES = ["preparing", "out_for_delivery", "delayed"];
@@ -79,7 +79,7 @@ Deno.serve(async (req) => {
   if (order.driver_id) {
     const { data: driver } = await admin.from("users").select("fcm_token").eq("id", order.driver_id).single();
     if (driver?.fcm_token) {
-      await sendDriverPush(
+      await sendPush(
         driver.fcm_token,
         "أوردر اتلغى",
         `أوردر #${order.pos_order_id ?? order.id} اتلغى - ${reason}. متكملش توصيله.`,

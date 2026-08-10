@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 import { useAuth } from "../lib/AuthContext";
 import { ORDER_STATUS_LABELS, ORDER_STATUS_STEPS, OrderStatus } from "../lib/orderStatus";
+import { enablePushNotifications, pushPermissionState } from "../lib/pushService";
 
 const WHATSAPP_HELP_URL = "https://wa.me/201224444219?text=" + encodeURIComponent("عندي استفسار عن طلبي");
 
@@ -99,6 +100,8 @@ export function Orders() {
       <div className="wrap section">
         <h1>طلباتي</h1>
 
+        <NotificationsPrompt />
+
         {orders.length === 0 && <p className="muted" style={{ marginTop: "var(--space-3)" }}>لسه معملتش أي طلب.</p>}
 
         <div className="orders-list">
@@ -107,6 +110,44 @@ export function Orders() {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Free alternative to a real SMS/WhatsApp provider (never configured -
+ * see _shared/notify.ts) - browser push, so the customer hears about
+ * their order getting accepted/dispatched/nearby without needing the
+ * tab open. Only ever shown while permission is still undecided; once
+ * the customer answers (either way) it disappears for good, matching
+ * how a real permission prompt should behave - never nags after a "لأ".
+ */
+function NotificationsPrompt() {
+  const [state, setState] = useState(pushPermissionState());
+  const [enabling, setEnabling] = useState(false);
+
+  if (state !== "default") return null;
+
+  async function enable() {
+    setEnabling(true);
+    const ok = await enablePushNotifications();
+    setEnabling(false);
+    setState(pushPermissionState());
+    if (!ok && pushPermissionState() === "default") {
+      // Permission dialog itself failed to appear (unsupported browser) -
+      // nothing to retry, just stop offering it.
+      setState("unsupported");
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: "var(--space-3)" }}>
+      <p style={{ margin: "0 0 8px" }}>
+        عايز تعرف لما الأوردر يتقبل أو يخرج للتوصيل من غير ما تفتح الصفحة كل شوية؟
+      </p>
+      <button className="btn btn-primary" onClick={enable} disabled={enabling}>
+        {enabling ? "جاري التفعيل..." : "فعّل الإشعارات"}
+      </button>
     </div>
   );
 }
