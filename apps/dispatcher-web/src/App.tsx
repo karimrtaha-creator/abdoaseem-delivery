@@ -14,6 +14,7 @@ import { BranchManagement } from "./pages/BranchManagement";
 import { MenuManagement } from "./pages/MenuManagement";
 import { MenuAvailability } from "./pages/MenuAvailability";
 import { BusinessHours } from "./pages/BusinessHours";
+import { DriverLocations } from "./pages/DriverLocations";
 
 type TabKey =
   | "dispatch"
@@ -26,7 +27,8 @@ type TabKey =
   | "branches"
   | "menu_photos"
   | "menu_availability"
-  | "business_hours";
+  | "business_hours"
+  | "driver_map";
 
 const ROLE_TITLES: Record<string, string> = {
   dispatcher: "ديسباتشر",
@@ -41,15 +43,20 @@ const ROLE_TITLES: Record<string, string> = {
 // screen behind these tabs still enforces its own scope via RLS/edge
 // function checks regardless of what's offered here.
 const TABS_BY_ROLE: Record<string, { key: TabKey; label: string }[]> = {
-  dispatcher: [{ key: "dispatch", label: "الأوردرات" }],
+  dispatcher: [
+    { key: "dispatch", label: "الأوردرات" },
+    { key: "driver_map", label: "مواقع الطيارين" },
+  ],
   call_center: [{ key: "call_center", label: "أوردر جديد" }],
   team_leader: [
     { key: "acceptance", label: "قبول الأوردرات" },
+    { key: "driver_map", label: "مواقع الطيارين" },
     { key: "business_hours", label: "مواعيد العمل" },
   ],
   general_manager: [
     { key: "dashboard", label: "لوحة المتابعة" },
     { key: "acceptance", label: "قبول الأوردرات" },
+    { key: "driver_map", label: "مواقع الطيارين" },
     { key: "performance", label: "أداء الطيارين" },
     { key: "complaints", label: "الشكاوى" },
     { key: "users", label: "إدارة المستخدمين" },
@@ -98,6 +105,8 @@ function ScreenFor({ tab, profile }: { tab: TabKey; profile: Profile }) {
       return <MenuAvailability profile={profile} />;
     case "business_hours":
       return <BusinessHours profile={profile} />;
+    case "driver_map":
+      return <DriverLocations profile={profile} />;
   }
 }
 
@@ -113,6 +122,7 @@ const TAB_TITLES: Record<TabKey, string> = {
   menu_photos: "صور المنتجات",
   menu_availability: "إقفال الأصناف",
   business_hours: "مواعيد العمل",
+  driver_map: "مواقع الطيارين",
 };
 
 export default function App() {

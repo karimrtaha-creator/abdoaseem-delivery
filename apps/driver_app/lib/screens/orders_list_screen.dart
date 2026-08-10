@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/driver_order.dart';
 import '../services/auth_service.dart';
+import '../services/location_tracking_service.dart';
 import '../services/orders_service.dart';
 import '../widgets/order_card.dart';
 import 'order_detail_screen.dart';
@@ -18,6 +19,7 @@ class OrdersListScreen extends StatefulWidget {
 class _OrdersListScreenState extends State<OrdersListScreen> {
   final _ordersService = OrdersService();
   final _authService = AuthService();
+  final _locationService = LocationTrackingService();
   StreamSubscription<List<DriverOrder>>? _sub;
   Timer? _tickTimer;
   List<DriverOrder> _orders = [];
@@ -26,12 +28,20 @@ class _OrdersListScreenState extends State<OrdersListScreen> {
   @override
   void initState() {
     super.initState();
+    _locationService.ensurePermissions();
     final uid = Supabase.instance.client.auth.currentUser!.id;
     _sub = _ordersService.activeOrdersStream(uid).listen((orders) {
       setState(() {
         _orders = orders;
         _loading = false;
       });
+      // Tracking is on for exactly as long as there's something out for
+      // delivery - start()/stop() are both no-ops if already in that state.
+      if (orders.isNotEmpty) {
+        _locationService.start();
+      } else {
+        _locationService.stop();
+      }
     });
     // Re-render every 15s so the remaining/overdue time on each card stays
     // live even when nothing in the DB has changed (section 6: "لحظة بلحظة").
@@ -44,6 +54,7 @@ class _OrdersListScreenState extends State<OrdersListScreen> {
   void dispose() {
     _sub?.cancel();
     _tickTimer?.cancel();
+    _locationService.stop();
     super.dispose();
   }
 
