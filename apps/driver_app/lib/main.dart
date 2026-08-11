@@ -7,6 +7,7 @@ import 'services/profile_service.dart';
 import 'services/push_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/orders_list_screen.dart';
+import 'screens/dispatcher_home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +22,7 @@ class DriverApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'تطبيق الطيار - عبده عاصم',
+      title: 'تطبيق التوصيل - كشري الغباشي',
       debugShowCheckedModeBanner: false,
       locale: const Locale('ar'),
       theme: ThemeData(
@@ -76,13 +77,35 @@ class _AuthGateState extends State<AuthGate> {
                 ),
               );
             }
+            // Mandatory dispatcher-photo gate (2026-08-11, approved design,
+            // Option A): dispatcher's whole workflow moved off the web and
+            // into this app - it needs the device camera for the photo
+            // step, so it can't be a website. Driver and dispatcher are
+            // two modes of the same app, gated by role, same pattern
+            // dispatcher-web's own TABS_BY_ROLE already uses.
+            if (profile.role == 'dispatcher') {
+              if (profile.branchId == null) {
+                return Scaffold(
+                  body: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('حساب الديسباتشر ده مش متربط بفرع - كلم المدير العام.'),
+                        TextButton(onPressed: () => _authService.signOut(), child: const Text('تسجيل خروج')),
+                      ],
+                    ),
+                  ),
+                );
+              }
+              return DispatcherHomeScreen(branchId: profile.branchId!);
+            }
             if (profile.role != 'driver') {
               return Scaffold(
                 body: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('التطبيق ده مخصص للطيار بس. الدور الحالي: ${profile.role}'),
+                      Text('التطبيق ده مخصص للطيار والديسباتشر بس. الدور الحالي: ${profile.role}'),
                       TextButton(onPressed: () => _authService.signOut(), child: const Text('تسجيل خروج')),
                     ],
                   ),

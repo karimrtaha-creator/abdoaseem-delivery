@@ -20,20 +20,12 @@
 // region, so neither regional_manager nor branch_manager (whose whole
 // authority is branch/region-scoped) can ever create one. This is not an
 // oversight; it's the intended design.
-import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
 import { getAdminClient, getCaller, AppRole } from "../_shared/auth.ts";
+import { logAudit } from "../_shared/audit.ts";
+import { BRANCH_SCOPED_ROLES, REGION_SCOPED_ROLES, ALL_STAFF_ROLES } from "../_shared/roleScopes.ts";
 
 const STAFF_EMAIL_DOMAIN = "abdoaseem.internal"; // same convention as apps/dispatcher-web + driver_app logins
-
-const BRANCH_SCOPED_ROLES: AppRole[] = ["driver", "dispatcher", "branch_manager"];
-const REGION_SCOPED_ROLES: AppRole[] = ["regional_manager"];
-const CENTRAL_ROLES: AppRole[] = ["general_manager", "team_leader", "call_center"];
-
-const ALL_STAFF_ROLES: AppRole[] = [
-  ...BRANCH_SCOPED_ROLES,
-  ...REGION_SCOPED_ROLES,
-  ...CENTRAL_ROLES,
-];
 
 function generatePassword(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
@@ -50,7 +42,7 @@ interface CreateUserBody {
   region_id?: number;
 }
 
-Deno.serve(async (req) => {
+serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("method not allowed", 405);
 
@@ -161,6 +153,16 @@ Deno.serve(async (req) => {
     const { error: insertError } = await admin.from("users").insert({ id: newUserId, ...profileFields });
     if (insertError) return errorResponse(insertError.message, 500);
   }
+
+  // Finding #006: never log the password - initial_password is the one
+  // field this metadata blob must never carry.
+  await logAudit(admin, caller, "user_created", "user", newUserId, {
+    name,
+    phone,
+    role,
+    branch_id: resolvedBranchId,
+    region_id: resolvedRegionId,
+  });
 
   return jsonResponse({
     user_id: newUserId,

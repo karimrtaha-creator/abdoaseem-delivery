@@ -12,15 +12,20 @@
 //      that's what accept-order's "reject" action is for.
 // A reason is required on both paths and stored so anyone reviewing the
 // order later can see exactly why it was cancelled.
-import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { sendPush } from "../_shared/fcm.ts";
+import { checkRateLimit } from "../_shared/rateLimit.ts";
+import { logAudit } from "../_shared/audit.ts";
 
 const CUSTOMER_CANCELLABLE_STATUSES = ["pending_acceptance"];
-const STAFF_CANCELLABLE_STATUSES = ["preparing", "out_for_delivery", "delayed"];
+// 'ready_for_driver' added 2026-08-11 (mandatory photo-gate feature) -
+// without it, a photographed-but-unassigned order would be cancellable
+// neither as 'preparing' nor via any other status in this list.
+const STAFF_CANCELLABLE_STATUSES = ["preparing", "ready_for_driver", "out_for_delivery", "delayed"];
 const STAFF_CANCEL_ROLES = ["team_leader", "general_manager"];
 
-Deno.serve(async (req) => {
+serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("method not allowed", 405);
 
@@ -44,6 +49,14 @@ Deno.serve(async (req) => {
   if (!reason) return errorResponse("a cancellation reason is required");
 
   const admin = getAdminClient();
+
+  // Finding #001: 20/minute - covers both paths sharing this function
+  // (an occasional customer self-cancel, or staff clearing several
+  // problem orders in a busy stretch) without opening the door to an
+  // automated cancellation flood.
+  const withinLimit = await checkRateLimit(admin, "cancel-order", caller.id, 60, 20);
+  if (!withinLimit) return errorResponse("too many requests - slow down", 429);
+
   const { data: order, error: orderError } = await admin
     .from("orders")
     .select("id, pos_order_id, customer_id, status, driver_id")
@@ -73,6 +86,12 @@ Deno.serve(async (req) => {
     .update({ status: "cancelled", cancellation_reason: reason, cancelled_by: caller.id })
     .eq("id", order_id);
   if (updateError) return errorResponse(updateError.message, 500);
+
+  await logAudit(admin, caller, "order_cancelled", "order", order_id, {
+    pos_order_id: order.pos_order_id,
+    reason,
+    cancelled_by_role: caller.role,
+  });
 
   // Only ever set once dispatch-order assigns a driver - a still-'preparing'
   // order that gets cancelled never had a driver involved, nothing to alert.

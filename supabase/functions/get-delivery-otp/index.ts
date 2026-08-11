@@ -6,10 +6,10 @@
 //     to show it in, so the agent relays it if the customer calls back)
 // Nobody else - specifically not dispatcher or driver, see the removal of
 // otp_code_debug from dispatch-order/resend-otp for why.
-import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 
-Deno.serve(async (req) => {
+serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("method not allowed", 405);
 

@@ -3,8 +3,10 @@
 // its line items in one server-side call. Prices are always re-fetched
 // from menu_items/combo_offers here - a client-supplied price is never
 // trusted, so a tampered request can't under-charge an order.
-import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
+import { checkRateLimit } from "../_shared/rateLimit.ts";
+import { lookupSlaMinutes } from "../_shared/sla.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 interface CartItem {
@@ -68,6 +70,10 @@ async function finishOrder(
     redirectedFrom?: string | null;
     servingBranchName?: string;
     deliveryFeeOverride?: number | null;
+    // Website orders only - the customer's selected delivery zone's name.
+    // Never set for call_center (that path's delivery_service comes from
+    // the dispatcher's OCR-confirm step at photograph time instead).
+    zoneName?: string | null;
   },
 ): Promise<Response> {
   const menuItemIds = args.items.filter((i) => i.menu_item_id != null).map((i) => i.menu_item_id as number);
@@ -181,6 +187,19 @@ async function finishOrder(
     deliveryFee = feeBranch?.delivery_fee ?? 0;
   }
 
+  // delivery_service + delivery_time_minutes (2026-08-11): website orders
+  // get both up front, the same moment the delivery fee is known - the
+  // zone the customer picked is the "service", and the same SLA-tier
+  // lookup dispatch-order already uses for this branch/fee combination
+  // gives a real delivery-time estimate this early. call_center orders
+  // deliberately get neither here - see photograph-order for why.
+  let deliveryService: string | null = null;
+  let deliveryTimeMinutes: number | null = null;
+  if (args.order_source === "customer_app") {
+    deliveryService = args.zoneName ?? null;
+    deliveryTimeMinutes = await lookupSlaMinutes(admin, deliveryFee, args.branch_id);
+  }
+
   const { data: order, error: orderError } = await admin
     .from("orders")
     .insert({
@@ -194,6 +213,8 @@ async function finishOrder(
       payment_method: args.paymentMethod,
       payment_proof_url: args.paymentProofUrl,
       delivery_fee_after_tax: deliveryFee,
+      delivery_service: deliveryService,
+      delivery_time_minutes: deliveryTimeMinutes,
     })
     .select("id")
     .single();
@@ -216,7 +237,7 @@ async function finishOrder(
   });
 }
 
-Deno.serve(async (req) => {
+serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("method not allowed", 405);
 
@@ -257,6 +278,15 @@ Deno.serve(async (req) => {
 
   const admin = getAdminClient();
 
+  // Finding #001: 10 orders / 5 minutes per caller - generous enough for
+  // a legitimate customer retrying a failed checkout a few times, tight
+  // enough to stop a script from flooding pending_acceptance with fake
+  // orders. call_center staff share this same per-caller budget (their
+  // own account, not per-guest-customer, since one agent phones in many
+  // customers' orders back-to-back as their actual job).
+  const withinLimit = await checkRateLimit(admin, "create-order", caller.id, 300, 10);
+  if (!withinLimit) return errorResponse("too many orders created recently - wait a bit and try again", 429);
+
   // Applies to both the customer self-checkout path and the call_center
   // phone-order path - the owner wants the site closed to new orders
   // outside these hours regardless of who's placing it.
@@ -289,14 +319,16 @@ Deno.serve(async (req) => {
     if (!address.nearest_branch_id) return errorResponse("this address has no nearest branch set", 422);
 
     let zoneDeliveryFee: number | null = null;
+    let zoneName: string | null = null;
     if (address.zone_id) {
       const { data: zone, error: zoneError } = await admin
         .from("delivery_zones")
-        .select("delivery_fee")
+        .select("delivery_fee, zone_name")
         .eq("id", address.zone_id)
         .single();
       if (zoneError) return errorResponse(zoneError.message, 500);
       zoneDeliveryFee = zone?.delivery_fee ?? null;
+      zoneName = zone?.zone_name ?? null;
     }
 
     const { data: branch, error: branchError } = await admin
@@ -339,6 +371,7 @@ Deno.serve(async (req) => {
       redirectedFrom,
       servingBranchName: servingBranch.name,
       deliveryFeeOverride: zoneDeliveryFee,
+      zoneName,
     });
   }
 

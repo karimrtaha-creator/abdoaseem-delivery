@@ -6,13 +6,14 @@
 // alone would still let an old, not-yet-expired session read data even if
 // re-login stayed blocked, and clearing only the ban without is_active
 // would leave RLS still shutting them out.
-import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
+import { logAudit } from "../_shared/audit.ts";
 
 const REGIONAL_MANAGER_TARGETS = ["branch_manager", "dispatcher", "driver"];
 const BRANCH_MANAGER_TARGETS = ["dispatcher", "driver"];
 
-Deno.serve(async (req) => {
+serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("method not allowed", 405);
 
@@ -82,6 +83,11 @@ Deno.serve(async (req) => {
       500,
     );
   }
+
+  await logAudit(admin, caller, "user_reactivated", "user", targetId, {
+    target_name: target.name,
+    target_role: target.role,
+  });
 
   return jsonResponse({ user_id: targetId, result: "reactivated" });
 });

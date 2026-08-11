@@ -39,8 +39,18 @@ export function Complaints() {
   const [busyId, setBusyId] = useState<number | null>(null);
 
   async function load() {
+    // Finding #003 (security audit): was fetching every complaint ever
+    // filed, unbounded. Open complaints need to stay visible regardless
+    // of age (that's the whole point of the "open" filter); a resolved
+    // complaint from over a month ago isn't something this screen's
+    // "كل الشكاوى" view needs to keep re-fetching forever.
+    const thirtyDaysAgoIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const [complaintsRes, branchesRes, driversRes] = await Promise.all([
-      supabase.from("complaints").select("*").order("created_at", { ascending: false }),
+      supabase
+        .from("complaints")
+        .select("*")
+        .or(`status.eq.open,created_at.gte.${thirtyDaysAgoIso}`)
+        .order("created_at", { ascending: false }),
       supabase.from("branches").select("id, name"),
       supabase.from("users").select("id, name").eq("role", "driver"),
     ]);

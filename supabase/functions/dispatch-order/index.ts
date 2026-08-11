@@ -2,21 +2,29 @@
 // prep_time_minutes and sla_minutes, stamps dispatch_time with the
 // function's own clock (server time, never a client-supplied timestamp),
 // generates the delivery OTP, and moves the order to out_for_delivery.
-import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, isBrowserRequest } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { lookupSlaMinutes, minutesBetween, generateOtpCode } from "../_shared/sla.ts";
 import { sendOtpToCustomer } from "../_shared/notify.ts";
 import { sendPush } from "../_shared/fcm.ts";
+import { checkRateLimit } from "../_shared/rateLimit.ts";
+import { logAudit } from "../_shared/audit.ts";
 
 const OTP_VALIDITY_MINUTES = 20;
 
-Deno.serve(async (req) => {
+serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("method not allowed", 405);
 
   const caller = await getCaller(req);
   if (!caller || !caller.is_active) return errorResponse("unauthorized", 401);
   if (caller.role !== "dispatcher") return errorResponse("only dispatcher can dispatch orders", 403);
+  // Karim's explicit instruction: dispatcher's whole job lives in the
+  // mobile app now, never dispatcher-web - see isBrowserRequest's comment
+  // in _shared/cors.ts for what this does and doesn't guarantee.
+  if (isBrowserRequest(req)) {
+    return errorResponse("dispatcher actions must go through the mobile app, not a browser", 403);
+  }
 
   let body: {
     order_id?: number;
@@ -37,6 +45,10 @@ Deno.serve(async (req) => {
 
   const admin = getAdminClient();
 
+  // Finding #001: same 30/minute budget as accept-order.
+  const withinLimit = await checkRateLimit(admin, "dispatch-order", caller.id, 60, 30);
+  if (!withinLimit) return errorResponse("too many requests - slow down", 429);
+
   const { data: order, error: orderError } = await admin
     .from("orders")
     .select("id, pos_order_id, branch_id, status, dispatch_time, accepted_at, customer_phone, customer_id")
@@ -46,14 +58,28 @@ Deno.serve(async (req) => {
   if (order.branch_id !== caller.branch_id) {
     return errorResponse("order does not belong to your branch", 403);
   }
-  // 'delayed' is allowed too, but only the still-preparing flavor of it
-  // (check-sla-breaches flips a forgotten preparing order to 'delayed';
-  // dispatch_time is still null for that case) - an already-dispatched
-  // order that later ran late is also 'delayed' but has a dispatch_time
-  // set, and must never be re-dispatched through this path.
-  const stillAwaitingDispatch = order.status === "preparing" || (order.status === "delayed" && !order.dispatch_time);
-  if (!stillAwaitingDispatch) {
+  // Mandatory dispatcher-photo gate (2026-08-11): 'ready_for_driver' is
+  // only ever reached via photograph-order, so checking for it here would
+  // normally be enough on its own - EXCEPT 'delayed' can also be reached
+  // straight from 'preparing' (check-sla-breaches flips a forgotten,
+  // never-photographed order to 'delayed' too), and that path must NOT be
+  // allowed to skip the photo. So the real gate is "does a photo actually
+  // exist for this order", checked directly - not inferred from status
+  // alone. An already-dispatched order that later ran late is also
+  // 'delayed' but has a dispatch_time set, and must never be re-dispatched
+  // through this path either way.
+  const statusAllowsDispatch = order.status === "ready_for_driver" || (order.status === "delayed" && !order.dispatch_time);
+  if (!statusAllowsDispatch) {
     return errorResponse(`order is in status '${order.status}', not awaiting dispatch`, 409);
+  }
+  if (order.status === "delayed") {
+    const { count: photoCount } = await admin
+      .from("order_photos")
+      .select("id", { count: "exact", head: true })
+      .eq("order_id", order_id);
+    if (!photoCount || photoCount === 0) {
+      return errorResponse("this order has not been photographed by a dispatcher yet - photograph it before dispatching", 409);
+    }
   }
 
   const { data: driver, error: driverError } = await admin
@@ -84,6 +110,11 @@ Deno.serve(async (req) => {
     })
     .eq("id", order_id);
   if (updateError) return errorResponse(updateError.message, 500);
+
+  await logAudit(admin, caller, "order_dispatched", "order", order_id, {
+    pos_order_id: order.pos_order_id,
+    driver_id,
+  });
 
   const code = generateOtpCode();
   const expiresAt = new Date(dispatchTime.getTime() + OTP_VALIDITY_MINUTES * 60_000);

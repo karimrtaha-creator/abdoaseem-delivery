@@ -3,7 +3,8 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
 import { useProfile, Profile } from "./lib/useProfile";
 import { Login } from "./pages/Login";
-import { Dispatch } from "./pages/Dispatch";
+import { CompleteStaffRegistration } from "./pages/CompleteStaffRegistration";
+import { PendingApprovals } from "./pages/PendingApprovals";
 import { CallCenter } from "./pages/CallCenter";
 import { AcceptanceLobby } from "./pages/AcceptanceLobby";
 import { UserManagement } from "./pages/UserManagement";
@@ -17,7 +18,6 @@ import { BusinessHours } from "./pages/BusinessHours";
 import { DriverLocations } from "./pages/DriverLocations";
 
 type TabKey =
-  | "dispatch"
   | "call_center"
   | "acceptance"
   | "users"
@@ -28,7 +28,8 @@ type TabKey =
   | "menu_photos"
   | "menu_availability"
   | "business_hours"
-  | "driver_map";
+  | "driver_map"
+  | "staff_requests";
 
 const ROLE_TITLES: Record<string, string> = {
   dispatcher: "ديسباتشر",
@@ -43,10 +44,14 @@ const ROLE_TITLES: Record<string, string> = {
 // screen behind these tabs still enforces its own scope via RLS/edge
 // function checks regardless of what's offered here.
 const TABS_BY_ROLE: Record<string, { key: TabKey; label: string }[]> = {
-  dispatcher: [
-    { key: "dispatch", label: "الأوردرات" },
-    { key: "driver_map", label: "مواقع الطيارين" },
-  ],
+  // dispatcher gets NO tabs at all, 2026-08-11 (Karim's explicit, final
+  // instruction): dispatcher's entire job - queue, camera, driver
+  // assignment, fee, AND driver-locations viewing - now lives in
+  // apps/driver_app's DispatcherHomeScreen. dispatcher-web is not part of
+  // this role's workflow at all anymore, not even for one screen - one
+  // device, one app. The empty array here hits the zero-tabs gate below,
+  // which shows a dispatcher-specific message pointing to the mobile app.
+  dispatcher: [],
   call_center: [{ key: "call_center", label: "أوردر جديد" }],
   team_leader: [
     { key: "acceptance", label: "قبول الأوردرات" },
@@ -59,6 +64,7 @@ const TABS_BY_ROLE: Record<string, { key: TabKey; label: string }[]> = {
     { key: "driver_map", label: "مواقع الطيارين" },
     { key: "performance", label: "أداء الطيارين" },
     { key: "complaints", label: "الشكاوى" },
+    { key: "staff_requests", label: "طلبات التسجيل" },
     { key: "users", label: "إدارة المستخدمين" },
     { key: "branches", label: "الفروع والمناطق" },
     { key: "menu_photos", label: "صور المنتجات" },
@@ -69,6 +75,7 @@ const TABS_BY_ROLE: Record<string, { key: TabKey; label: string }[]> = {
     { key: "dashboard", label: "لوحة المتابعة" },
     { key: "performance", label: "أداء الطيارين" },
     { key: "complaints", label: "الشكاوى" },
+    { key: "staff_requests", label: "طلبات التسجيل" },
     { key: "users", label: "إدارة المستخدمين" },
     { key: "menu_availability", label: "إقفال الأصناف" },
   ],
@@ -76,6 +83,7 @@ const TABS_BY_ROLE: Record<string, { key: TabKey; label: string }[]> = {
     { key: "dashboard", label: "لوحة المتابعة" },
     { key: "performance", label: "أداء الطيارين" },
     { key: "complaints", label: "الشكاوى" },
+    { key: "staff_requests", label: "طلبات التسجيل" },
     { key: "users", label: "إدارة المستخدمين" },
     { key: "menu_availability", label: "إقفال الأصناف" },
   ],
@@ -83,8 +91,6 @@ const TABS_BY_ROLE: Record<string, { key: TabKey; label: string }[]> = {
 
 function ScreenFor({ tab, profile }: { tab: TabKey; profile: Profile }) {
   switch (tab) {
-    case "dispatch":
-      return <Dispatch profile={profile} />;
     case "call_center":
       return <CallCenter />;
     case "acceptance":
@@ -107,11 +113,12 @@ function ScreenFor({ tab, profile }: { tab: TabKey; profile: Profile }) {
       return <BusinessHours profile={profile} />;
     case "driver_map":
       return <DriverLocations profile={profile} />;
+    case "staff_requests":
+      return <PendingApprovals profile={profile} />;
   }
 }
 
 const TAB_TITLES: Record<TabKey, string> = {
-  dispatch: "الأوردرات",
   call_center: "أوردر جديد",
   acceptance: "قبول الأوردرات",
   users: "إدارة المستخدمين",
@@ -123,6 +130,7 @@ const TAB_TITLES: Record<TabKey, string> = {
   menu_availability: "إقفال الأصناف",
   business_hours: "مواعيد العمل",
   driver_map: "مواقع الطيارين",
+  staff_requests: "طلبات التسجيل",
 };
 
 export default function App() {
@@ -162,13 +170,24 @@ export default function App() {
     );
   }
 
+  // Staff Registration feature (2026-08-11): a Google-authenticated
+  // session with no approved staff role yet is always role='customer'
+  // (handle_new_user() never grants anything else at signup) - route
+  // them into the registration form/pending-review screen instead of the
+  // generic "role not available" message below.
+  if (profile.role === "customer") {
+    return <CompleteStaffRegistration userId={profile.id} />;
+  }
+
   const tabs = TABS_BY_ROLE[profile.role] ?? [];
   if (tabs.length === 0) {
     return (
       <div className="centered-page">
         <div className="card">
           <p className="error-text">
-            الشاشة دي مش متاحة للدور ده. الدور الحالي: {profile.role}
+            {profile.role === "dispatcher"
+              ? "حساب الديسباتشر بيشتغل من تطبيق الموبايل بس - مفيش استخدام لهذا الموقع."
+              : `الشاشة دي مش متاحة للدور ده. الدور الحالي: ${profile.role}`}
           </p>
           <button className="btn-link" onClick={() => supabase.auth.signOut()}>
             تسجيل خروج

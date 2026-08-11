@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "apps/dispatcher-web", "run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "team-system",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "../team-system", "run", "dev"],
+      "port": 5175
     }
   ]
 }

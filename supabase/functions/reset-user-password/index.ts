@@ -3,8 +3,9 @@
 // delete, this applies regardless of the target's is_active state (a
 // suspended employee's password still needs resetting before they're
 // reactivated, and an active one may have simply forgotten theirs).
-import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
+import { logAudit } from "../_shared/audit.ts";
 
 const REGIONAL_MANAGER_TARGETS = ["branch_manager", "dispatcher", "driver"];
 const BRANCH_MANAGER_TARGETS = ["dispatcher", "driver"];
@@ -16,7 +17,7 @@ function generatePassword(): string {
   return Array.from(bytes, (b) => chars[b % chars.length]).join("");
 }
 
-Deno.serve(async (req) => {
+serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("method not allowed", 405);
 
@@ -69,6 +70,11 @@ Deno.serve(async (req) => {
   const newPassword = generatePassword();
   const { error: updateError } = await admin.auth.admin.updateUserById(targetId, { password: newPassword });
   if (updateError) return errorResponse(updateError.message, 500);
+
+  // The password itself never goes in metadata - only that a reset happened.
+  await logAudit(admin, caller, "password_reset", "user", targetId, {
+    target_phone: target.phone,
+  });
 
   return jsonResponse({
     user_id: targetId,

@@ -26,6 +26,18 @@ interface DriverStats {
   delayedCount: number;
 }
 
+// Finding #003 (security audit) - safety-net only, not a business-logic
+// change: this screen's whole point is an all-time average per driver, so
+// unlike Dashboard.tsx/Complaints.tsx it is NOT time-windowed. At the
+// project's actual live data size (8 orders total as of 2026-08-11, this
+// is a pre-launch 13-branch chain) a cap this size changes nothing today
+// and won't for a very long time - it exists purely so a future runaway
+// scenario (data bug, years of unchecked growth) can't hand the browser
+// an unbounded, ever-growing payload. Ordered newest-first so if this
+// cap is ever actually reached, it's the oldest history that drops off,
+// not the most recently relevant driver activity.
+const ORDERS_ROW_CAP = 100_000;
+
 export function DriverPerformance({ profile }: { profile: Profile }) {
   const [drivers, setDrivers] = useState<DriverRow[]>([]);
   const [orders, setOrders] = useState<OrderRow[]>([]);
@@ -34,7 +46,11 @@ export function DriverPerformance({ profile }: { profile: Profile }) {
   useEffect(() => {
     Promise.all([
       supabase.from("users").select("id, name, branch_id, is_active").eq("role", "driver").order("name"),
-      supabase.from("orders").select("driver_id, status, dispatch_time, delivered_time, is_delayed"),
+      supabase
+        .from("orders")
+        .select("driver_id, status, dispatch_time, delivered_time, is_delayed")
+        .order("id", { ascending: false })
+        .limit(ORDERS_ROW_CAP),
     ]).then(([driversRes, ordersRes]) => {
       setDrivers((driversRes.data as DriverRow[]) ?? []);
       setOrders((ordersRes.data as OrderRow[]) ?? []);

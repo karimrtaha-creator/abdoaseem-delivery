@@ -1,0 +1,11 @@
+-- Bug found during live verification of migration 0040: RLS policies
+-- alone are not enough - Postgres also requires the underlying table-level
+-- GRANT before `authenticated` can touch the table at all (RLS narrows an
+-- already-granted permission, it doesn't grant one on its own). Confirmed
+-- live: every read attempt returned 42501 "permission denied" despite
+-- correct RLS policies. This project hit the exact same gotcha once
+-- before for a different table (see 0004_service_role_grants.sql).
+-- No INSERT/UPDATE grant needed - those only ever happen via the two
+-- edge functions (service_role), matching the "no client-facing write
+-- policy at all" design already in 0040.
+grant select on public.staff_registration_requests to authenticated;

@@ -17,13 +17,14 @@
 // Neither one alone is enough: RLS-only leaves them able to keep logging
 // back in; ban-only leaves an already-cached, not-yet-expired access
 // token free to keep reading data until it naturally expires.
-import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
+import { logAudit } from "../_shared/audit.ts";
 
 const REGIONAL_MANAGER_TARGETS = ["branch_manager", "dispatcher", "driver"];
 const BRANCH_MANAGER_TARGETS = ["dispatcher", "driver"];
 
-Deno.serve(async (req) => {
+serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("method not allowed", 405);
 
@@ -101,6 +102,11 @@ Deno.serve(async (req) => {
       500,
     );
   }
+
+  await logAudit(admin, caller, "user_deactivated", "user", targetId, {
+    target_name: target.name,
+    target_role: target.role,
+  });
 
   return jsonResponse({ user_id: targetId, result: "deactivated" });
 });

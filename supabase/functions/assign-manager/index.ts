@@ -10,7 +10,7 @@
 // to null) until the general_manager manually reassigns or deactivates
 // them separately. Deactivation is deliberately a distinct, explicit
 // action (deactivate-user), never an automatic side effect of this one.
-import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 
 interface AssignBody {
@@ -19,7 +19,7 @@ interface AssignBody {
   target_id?: number;
 }
 
-Deno.serve(async (req) => {
+serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("method not allowed", 405);
 

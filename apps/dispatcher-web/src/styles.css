@@ -239,6 +239,7 @@ input:focus, select:focus { outline: 2px solid var(--primary); outline-offset: 1
 .error-text { color: var(--danger); font-weight: 600; }
 
 .success-banner { background: var(--success-bg); color: var(--success-text); border: none; }
+.error-banner { background: var(--danger-bg); color: var(--danger); border: none; }
 
 .order-list { display: flex; flex-direction: column; gap: 10px; }
 

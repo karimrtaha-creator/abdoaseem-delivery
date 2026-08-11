@@ -13,13 +13,14 @@
 //      account deactivated forever. Deactivation already fully and
 //      permanently blocks their access; delete is only for accounts that
 //      never did any real work (e.g. created by mistake).
-import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
+import { logAudit } from "../_shared/audit.ts";
 
 const REGIONAL_MANAGER_TARGETS = ["branch_manager", "dispatcher", "driver"];
 const BRANCH_MANAGER_TARGETS = ["dispatcher", "driver"];
 
-Deno.serve(async (req) => {
+serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("method not allowed", 405);
 
@@ -99,6 +100,14 @@ Deno.serve(async (req) => {
   // row via the existing id -> auth.users foreign key (ON DELETE CASCADE).
   const { error: deleteError } = await admin.auth.admin.deleteUser(targetId);
   if (deleteError) return errorResponse(deleteError.message, 500);
+
+  // Logged after the fact with a name/role snapshot in metadata - the
+  // public.users row is already gone by this point (cascade delete), so
+  // entity_id alone wouldn't be enough to identify who this was later.
+  await logAudit(admin, caller, "user_deleted", "user", targetId, {
+    target_name: target.name,
+    target_role: target.role,
+  });
 
   return jsonResponse({ user_id: targetId, result: "deleted" });
 });

@@ -8,15 +8,16 @@
 // attempt lock: resetting attempts to 0 on demand means unlimited guesses
 // in batches of MAX_ATTEMPTS. See verify-otp/index.ts for why business
 // outcomes here also return HTTP 200 + a `result` field.
-import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { generateOtpCode } from "../_shared/sla.ts";
 import { sendOtpToCustomer } from "../_shared/notify.ts";
+import { checkRateLimit } from "../_shared/rateLimit.ts";
 
 const OTP_VALIDITY_MINUTES = 20;
 const MAX_RESENDS = 3; // + the 1 code from dispatch-order = 4 codes/order max
 
-Deno.serve(async (req) => {
+serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("method not allowed", 405);
 
@@ -34,6 +35,14 @@ Deno.serve(async (req) => {
   if (!order_id) return errorResponse("order_id is required");
 
   const admin = getAdminClient();
+
+  // Finding #001, additive only - the existing MAX_RESENDS lifetime cap
+  // below is untouched. This just stops a driver's app from firing
+  // resend calls back-to-back within that budget and burning all 3
+  // allowed resends (and 3 real SMS sends) in under a second.
+  const withinLimit = await checkRateLimit(admin, "resend-otp", caller.id, 30, 1);
+  if (!withinLimit) return errorResponse("wait a bit before resending the code again", 429);
+
   const { data: order, error: orderError } = await admin
     .from("orders")
     .select("id, driver_id, status, customer_phone")

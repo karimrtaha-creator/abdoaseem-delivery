@@ -9,7 +9,7 @@
 // Silently skips an order whenever either point is missing (driver
 // hasn't sent a location yet, or the address was never pinned) - there's
 // nothing wrong to report, just nothing to compare yet.
-import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
 import { getAdminClient } from "../_shared/auth.ts";
 import { sendPush } from "../_shared/fcm.ts";
 
@@ -26,7 +26,7 @@ function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number):
   return EARTH_RADIUS_METERS * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-Deno.serve(async (req) => {
+serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   // Same cron-only gate as check-sla-breaches - no per-user role to

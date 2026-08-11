@@ -13,13 +13,13 @@
 // before this fix. Real HTTP error codes are reserved for genuine
 // exceptions: 401 unauthorized, 403 wrong role/not your order, 404 order
 // not found, 409 wrong order status, 500 server error.
-import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { minutesBetween } from "../_shared/sla.ts";
 
 const MAX_ATTEMPTS = 5;
 
-Deno.serve(async (req) => {
+serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("method not allowed", 405);
 

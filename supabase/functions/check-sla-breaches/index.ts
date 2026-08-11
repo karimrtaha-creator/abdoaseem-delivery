@@ -6,7 +6,7 @@
 // flag) and alerts managers once per breach - it will not re-alert an
 // order already marked delayed.
 //
-// Two independent legs get checked, not just one:
+// Three independent legs get checked, not just one:
 //   1. dispatch -> delivery (the original check): out_for_delivery orders
 //      whose dispatch_time + sla_minutes has passed.
 //   2. acceptance -> dispatch (added after a live bug report): an order
@@ -17,7 +17,12 @@
 //      live - server-side, nothing ever flagged it, so it just sat in the
 //      "ongoing" count forever and never became "delayed" for anyone
 //      (general_manager included) to notice on the dashboard.
-import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
+//   3. photographed -> assigned (added with the mandatory photo-gate
+//      feature, 2026-08-11): an order that's been sitting in
+//      'ready_for_driver' too long because no dispatcher assigned a
+//      driver yet. Same gap as #2 would otherwise exist here too - the
+//      order is physically ready and photographed, just never handed off.
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
 import { getAdminClient } from "../_shared/auth.ts";
 import { alertManagersOrderDelayed } from "../_shared/notify.ts";
 
@@ -26,7 +31,7 @@ import { alertManagersOrderDelayed } from "../_shared/notify.ts";
 // anywhere in the spec, this is just "long enough that someone forgot it".
 const PREP_ALERT_THRESHOLD_MINUTES = 10;
 
-Deno.serve(async (req) => {
+serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   // This function has no per-user role to check (it's meant to run
@@ -52,16 +57,21 @@ Deno.serve(async (req) => {
   const admin = getAdminClient();
   const nowIso = new Date().toISOString();
 
-  const [dispatchedRes, preparingRes] = await Promise.all([
+  const [dispatchedRes, preparingRes, readyForDriverRes] = await Promise.all([
     admin
       .from("orders")
       .select("id, branch_id, dispatch_time, sla_minutes")
       .eq("status", "out_for_delivery")
       .not("dispatch_time", "is", null),
     admin.from("orders").select("id, branch_id, accepted_at").eq("status", "preparing").not("accepted_at", "is", null),
+    admin
+      .from("orders")
+      .select("id, branch_id, order_photos(photographed_at)")
+      .eq("status", "ready_for_driver"),
   ]);
   if (dispatchedRes.error) return errorResponse(dispatchedRes.error.message, 500);
   if (preparingRes.error) return errorResponse(preparingRes.error.message, 500);
+  if (readyForDriverRes.error) return errorResponse(readyForDriverRes.error.message, 500);
 
   const breachedDispatched = (dispatchedRes.data ?? []).filter((o) => {
     const deadline = new Date(o.dispatch_time).getTime() + o.sla_minutes * 60_000;
@@ -71,8 +81,18 @@ Deno.serve(async (req) => {
     const deadline = new Date(o.accepted_at).getTime() + PREP_ALERT_THRESHOLD_MINUTES * 60_000;
     return deadline < Date.now();
   });
-  const breached = [...breachedDispatched, ...breachedPreparing];
-  const checked = (dispatchedRes.data?.length ?? 0) + (preparingRes.data?.length ?? 0);
+  // A ready_for_driver order can have more than one order_photos row
+  // (multiple angles, a correction re-shoot) - the earliest one is the
+  // moment it actually became ready, which is what the delay clock
+  // should measure from.
+  const breachedReadyForDriver = (readyForDriverRes.data ?? []).filter((o) => {
+    const photos = (o.order_photos as { photographed_at: string }[]) ?? [];
+    if (photos.length === 0) return false;
+    const earliestPhotographedAt = Math.min(...photos.map((p) => new Date(p.photographed_at).getTime()));
+    return earliestPhotographedAt + PREP_ALERT_THRESHOLD_MINUTES * 60_000 < Date.now();
+  });
+  const breached = [...breachedDispatched, ...breachedPreparing, ...breachedReadyForDriver];
+  const checked = (dispatchedRes.data?.length ?? 0) + (preparingRes.data?.length ?? 0) + (readyForDriverRes.data?.length ?? 0);
 
   if (breached.length === 0) {
     return jsonResponse({ checked, flagged: 0 });

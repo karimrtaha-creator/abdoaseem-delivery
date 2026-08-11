@@ -2,11 +2,13 @@
 // gate every order (call_center / customer_app) passes through before
 // entering `preparing`. POS orders (Phase 5, auto-accept per section 6
 // note) are out of scope here.
-import { corsHeaders, jsonResponse, errorResponse } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { sendPush } from "../_shared/fcm.ts";
+import { checkRateLimit } from "../_shared/rateLimit.ts";
+import { logAudit } from "../_shared/audit.ts";
 
-Deno.serve(async (req) => {
+serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("method not allowed", 405);
 
@@ -28,6 +30,13 @@ Deno.serve(async (req) => {
   }
 
   const admin = getAdminClient();
+
+  // Finding #001: 30 / minute - generous for a team_leader clicking
+  // through a real backlog of pending orders quickly, tight enough to
+  // stop an automated flood of accept/reject calls.
+  const withinLimit = await checkRateLimit(admin, "accept-order", caller.id, 60, 30);
+  if (!withinLimit) return errorResponse("too many requests - slow down", 429);
+
   const { data: order, error: orderError } = await admin
     .from("orders")
     .select("id, pos_order_id, status, payment_method, payment_proof_url, customer_id")
@@ -45,6 +54,7 @@ Deno.serve(async (req) => {
       .update({ status: "rejected" })
       .eq("id", order_id);
     if (updateError) return errorResponse(updateError.message, 500);
+    await logAudit(admin, caller, "order_rejected", "order", order_id, { pos_order_id: order.pos_order_id });
     return jsonResponse({ order_id, status: "rejected" });
   }
 
@@ -66,6 +76,8 @@ Deno.serve(async (req) => {
     .eq("id", order_id);
 
   if (updateError) return errorResponse(updateError.message, 500);
+
+  await logAudit(admin, caller, "order_accepted", "order", order_id, { pos_order_id: order.pos_order_id });
 
   const { data: customer } = await admin.from("users").select("fcm_token").eq("id", order.customer_id).single();
   if (customer?.fcm_token) {

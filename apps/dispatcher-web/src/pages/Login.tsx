@@ -7,6 +7,7 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -18,6 +19,25 @@ export function Login() {
     });
     setSubmitting(false);
     if (error) setError("رقم التليفون أو الباسورد غلط");
+  }
+
+  // Staff Registration feature (2026-08-11) - a new employee applying for
+  // an account, not an existing staff member logging in. Same Google
+  // provider already configured for customer-web (project-wide, not
+  // per-app) - App.tsx's post-login gate routes a fresh role='customer'
+  // session here into the registration form.
+  async function handleGoogleSignUp() {
+    setError(null);
+    setGoogleBusy(true);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    });
+    if (error) {
+      setError(error.message);
+      setGoogleBusy(false);
+    }
+    // On success the browser redirects to Google - no further code runs here.
   }
 
   return (
@@ -48,6 +68,17 @@ export function Login() {
         {error && <p className="error-text">{error}</p>}
         <button type="submit" disabled={submitting} className="btn-primary btn-large">
           {submitting ? "جاري الدخول..." : "دخول"}
+        </button>
+        <div className="inline-row" style={{ justifyContent: "center", margin: "12px 0" }}>
+          <span className="muted">أو</span>
+        </div>
+        <button
+          type="button"
+          className="btn-link btn-large"
+          disabled={googleBusy}
+          onClick={handleGoogleSignUp}
+        >
+          {googleBusy ? "جاري التحويل لجوجل..." : "موظف جديد؟ سجّل بحساب جوجل"}
         </button>
       </form>
     </div>
