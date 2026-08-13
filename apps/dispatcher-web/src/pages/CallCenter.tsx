@@ -33,6 +33,7 @@ interface ComboChoiceOption {
   id: number;
   label: string;
   display_order: number;
+  is_available: boolean;
 }
 interface ComboChoiceGroup {
   id: number;
@@ -103,6 +104,7 @@ export function CallCenter() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [combos, setCombos] = useState<ComboOffer[]>([]);
   const [comboChoiceGroups, setComboChoiceGroups] = useState<ComboChoiceGroup[]>([]);
+  const [comboSectionLabel, setComboSectionLabel] = useState("الكومبوهات");
   // combo_offer_id -> choice_group_id -> selected option id
   const [comboSelections, setComboSelections] = useState<Record<number, Record<number, number>>>({});
 
@@ -138,6 +140,7 @@ export function CallCenter() {
       .from("menu_items")
       .select("id, category_id, name, price, is_available")
       .eq("is_available", true)
+      .order("display_order")
       .then(({ data }) => setMenuItems((data as MenuItem[]) ?? []));
     supabase
       .from("combo_offers")
@@ -146,9 +149,15 @@ export function CallCenter() {
       .then(({ data }) => setCombos((data as ComboOffer[]) ?? []));
     supabase
       .from("combo_choice_groups")
-      .select("id, combo_offer_id, label, display_order, combo_choice_options(id, label, display_order)")
+      .select("id, combo_offer_id, label, display_order, combo_choice_options(id, label, display_order, is_available)")
       .order("display_order")
       .then(({ data }) => setComboChoiceGroups((data as ComboChoiceGroup[]) ?? []));
+    supabase
+      .from("combo_section_settings")
+      .select("label")
+      .eq("id", 1)
+      .maybeSingle()
+      .then(({ data }) => setComboSectionLabel(data?.label ?? "الكومبوهات"));
   }, []);
 
   // Best-effort branch suggestion once the customer's area is known - the
@@ -428,7 +437,7 @@ export function CallCenter() {
         })}
         {combos.length > 0 && (
           <div className="menu-category">
-            <h3>الكومبوهات</h3>
+            <h3>{comboSectionLabel}</h3>
             <div className="menu-grid">
               {combos.map((combo) => {
                 const groups = choiceGroupsByCombo.get(combo.id) ?? [];
@@ -442,7 +451,7 @@ export function CallCenter() {
                     {groups.map((group) => (
                       <div key={group.id} style={{ marginTop: 6 }}>
                         <p className="muted" style={{ fontSize: "0.85rem", fontWeight: 700 }}>{group.label}</p>
-                        {group.combo_choice_options.map((option) => (
+                        {group.combo_choice_options.filter((o) => o.is_available).map((option) => (
                           <label key={option.id} className="radio-label" style={{ display: "block", fontSize: "0.85rem" }}>
                             <input
                               type="radio"

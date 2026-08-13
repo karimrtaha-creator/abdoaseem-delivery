@@ -29,7 +29,7 @@ const ROLE_LABELS: Record<string, string> = {
   regional_manager: "مدير منطقة",
   general_manager: "مدير عام",
   team_leader: "تيم ليدر",
-  call_center: "كول سنتر",
+  call_center: "Agent",
 };
 
 // Same shape as _shared/roleScopes.ts, mirrored client-side for the form's

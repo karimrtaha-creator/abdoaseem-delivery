@@ -21,28 +21,45 @@ interface Closure {
   menu_item_id: number;
   branch_id: number;
 }
+interface ComboOffer {
+  id: number;
+  name: string;
+}
+interface ComboClosure {
+  combo_offer_id: number;
+  branch_id: number;
+}
 
 export function MenuAvailability({ profile }: { profile: Profile }) {
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [closures, setClosures] = useState<Closure[]>([]);
+  const [combos, setCombos] = useState<ComboOffer[]>([]);
+  const [comboClosures, setComboClosures] = useState<ComboClosure[]>([]);
+  const [comboSectionLabel, setComboSectionLabel] = useState("الكومبوهات");
   const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
   async function load() {
-    const [categoriesRes, itemsRes, branchesRes, closuresRes] = await Promise.all([
+    const [categoriesRes, itemsRes, branchesRes, closuresRes, combosRes, comboClosuresRes, comboSectionRes] = await Promise.all([
       supabase.from("menu_categories").select("id, name, display_order").order("display_order"),
-      supabase.from("menu_items").select("id, category_id, name").order("id"),
+      supabase.from("menu_items").select("id, category_id, name").order("display_order"),
       supabase.from("branches").select("id, name, region_id").order("name"),
       supabase.from("menu_item_branch_closures").select("menu_item_id, branch_id"),
+      supabase.from("combo_offers").select("id, name").eq("is_active", true).order("id"),
+      supabase.from("combo_offer_branch_closures").select("combo_offer_id, branch_id"),
+      supabase.from("combo_section_settings").select("label").eq("id", 1).maybeSingle(),
     ]);
     setCategories((categoriesRes.data as MenuCategory[]) ?? []);
     setItems((itemsRes.data as MenuItem[]) ?? []);
     setBranches((branchesRes.data as Branch[]) ?? []);
     setClosures((closuresRes.data as Closure[]) ?? []);
+    setCombos((combosRes.data as ComboOffer[]) ?? []);
+    setComboClosures((comboClosuresRes.data as ComboClosure[]) ?? []);
+    setComboSectionLabel(comboSectionRes.data?.label ?? "الكومبوهات");
     setLoading(false);
   }
 
@@ -51,7 +68,11 @@ export function MenuAvailability({ profile }: { profile: Profile }) {
   }, []);
 
   const myBranches = useMemo(() => {
-    if (profile.role === "general_manager") return branches;
+    // team_leader added 2026-08-11 - same unrestricted breadth as
+    // general_manager here, matching their company-wide order visibility
+    // elsewhere (RLS on menu_item_branch_closures already grants this,
+    // not just the UI).
+    if (profile.role === "general_manager" || profile.role === "team_leader") return branches;
     if (profile.role === "regional_manager") return branches.filter((b) => b.region_id === profile.region_id);
     if (profile.role === "branch_manager") return branches.filter((b) => b.id === profile.branch_id);
     return [];
@@ -78,6 +99,11 @@ export function MenuAvailability({ profile }: { profile: Profile }) {
     return new Set(closures.filter((c) => c.branch_id === selectedBranchId).map((c) => c.menu_item_id));
   }, [closures, selectedBranchId]);
 
+  const closedComboIds = useMemo(() => {
+    if (selectedBranchId === null) return new Set<number>();
+    return new Set(comboClosures.filter((c) => c.branch_id === selectedBranchId).map((c) => c.combo_offer_id));
+  }, [comboClosures, selectedBranchId]);
+
   async function toggleClosed(item: MenuItem, isClosed: boolean) {
     if (selectedBranchId === null) return;
     setError(null);
@@ -101,6 +127,31 @@ export function MenuAvailability({ profile }: { profile: Profile }) {
       });
       if (insertError) setError(insertError.message);
       else setClosures((prev) => [...prev, { menu_item_id: item.id, branch_id: selectedBranchId }]);
+    }
+    setBusyKey(null);
+  }
+
+  async function toggleComboClosed(combo: ComboOffer, isClosed: boolean) {
+    if (selectedBranchId === null) return;
+    setError(null);
+    setBusyKey(`combo-${combo.id}`);
+    if (isClosed) {
+      const { error: deleteError } = await supabase
+        .from("combo_offer_branch_closures")
+        .delete()
+        .eq("combo_offer_id", combo.id)
+        .eq("branch_id", selectedBranchId);
+      if (deleteError) setError(deleteError.message);
+      else setComboClosures((prev) => prev.filter((c) => !(c.combo_offer_id === combo.id && c.branch_id === selectedBranchId)));
+    } else {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const { error: insertError } = await supabase.from("combo_offer_branch_closures").insert({
+        combo_offer_id: combo.id,
+        branch_id: selectedBranchId,
+        closed_by: sessionData.session?.user.id ?? null,
+      });
+      if (insertError) setError(insertError.message);
+      else setComboClosures((prev) => [...prev, { combo_offer_id: combo.id, branch_id: selectedBranchId }]);
     }
     setBusyKey(null);
   }
@@ -174,6 +225,42 @@ export function MenuAvailability({ profile }: { profile: Profile }) {
           </div>
         );
       })}
+
+      {combos.length > 0 && (
+        <div className="card">
+          <h2>{comboSectionLabel}</h2>
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>الكومبو</th>
+                  <th>الحالة</th>
+                  <th>متاح في الفرع ده</th>
+                </tr>
+              </thead>
+              <tbody>
+                {combos.map((combo) => {
+                  const isClosed = closedComboIds.has(combo.id);
+                  return (
+                    <tr key={combo.id}>
+                      <td>{combo.name}</td>
+                      <td className={isClosed ? "error-text" : "muted"}>{isClosed ? "مقفول في الفرع ده" : "متاح"}</td>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={!isClosed}
+                          disabled={busyKey === `combo-${combo.id}`}
+                          onChange={() => toggleComboClosed(combo, isClosed)}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

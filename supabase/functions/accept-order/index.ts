@@ -14,8 +14,12 @@ serveWithCors(async (req) => {
 
   const caller = await getCaller(req);
   if (!caller || !caller.is_active) return errorResponse("unauthorized", 401);
-  if (!["team_leader", "general_manager"].includes(caller.role)) {
-    return errorResponse("only team_leader or general_manager can accept/reject orders", 403);
+  // "Agent" (call_center role, 2026-08-11) can accept/reject too, but only
+  // website orders - see the order_source check below. Their own
+  // phone-order-taking duty is unaffected; they've never self-accepted
+  // those, team_leader/general_manager still do.
+  if (!["team_leader", "general_manager", "call_center"].includes(caller.role)) {
+    return errorResponse("only team_leader, general_manager, or call_center can accept/reject orders", 403);
   }
 
   let body: { order_id?: number; action?: "accept" | "reject" };
@@ -39,13 +43,16 @@ serveWithCors(async (req) => {
 
   const { data: order, error: orderError } = await admin
     .from("orders")
-    .select("id, pos_order_id, status, payment_method, payment_proof_url, customer_id")
+    .select("id, pos_order_id, status, payment_method, payment_proof_url, customer_id, order_source")
     .eq("id", order_id)
     .single();
 
   if (orderError || !order) return errorResponse("order not found", 404);
   if (order.status !== "pending_acceptance") {
     return errorResponse(`order is in status '${order.status}', not 'pending_acceptance'`, 409);
+  }
+  if (caller.role === "call_center" && order.order_source !== "customer_app") {
+    return errorResponse("call_center can only accept/reject website orders", 403);
   }
 
   if (action === "reject") {

@@ -23,6 +23,7 @@ interface ComboChoiceOption {
   id: number;
   label: string;
   display_order: number;
+  is_available: boolean;
 }
 interface ComboChoiceGroup {
   id: number;
@@ -61,6 +62,7 @@ export function Menu() {
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [combos, setCombos] = useState<ComboOffer[]>([]);
+  const [comboSectionLabel, setComboSectionLabel] = useState("الكومبوهات");
   const [comboChoiceGroups, setComboChoiceGroups] = useState<ComboChoiceGroup[]>([]);
   const [closures, setClosures] = useState<Closure[]>([]);
   const [extraApplicability, setExtraApplicability] = useState<ExtraApplicability[]>([]);
@@ -80,15 +82,17 @@ export function Menu() {
       supabase
         .from("menu_items")
         .select("id, category_id, name, price, is_available, image_url, description")
-        .eq("is_available", true),
+        .eq("is_available", true)
+        .order("display_order"),
       supabase.from("combo_offers").select("id, name, description, price, is_active, image_url").eq("is_active", true),
       supabase
         .from("combo_choice_groups")
-        .select("id, combo_offer_id, label, display_order, combo_choice_options(id, label, display_order)")
+        .select("id, combo_offer_id, label, display_order, combo_choice_options(id, label, display_order, is_available)")
         .order("display_order"),
       supabase.from("menu_item_branch_closures").select("menu_item_id, branch_id"),
       supabase.from("menu_item_extra_applicability").select("extra_item_id, applies_to_item_id"),
-    ]).then(([categoriesRes, itemsRes, combosRes, choiceGroupsRes, closuresRes, extrasRes]) => {
+      supabase.from("combo_section_settings").select("label").eq("id", 1).maybeSingle(),
+    ]).then(([categoriesRes, itemsRes, combosRes, choiceGroupsRes, closuresRes, extrasRes, comboSectionRes]) => {
       setCategories((categoriesRes.data as MenuCategory[]) ?? []);
       setItems((itemsRes.data as MenuItem[]) ?? []);
       setCombos((combosRes.data as ComboOffer[]) ?? []);
@@ -99,6 +103,7 @@ export function Menu() {
       setComboChoiceGroups((choiceGroupsRes.data as ComboChoiceGroup[]) ?? []);
       setClosures((closuresRes.data as Closure[]) ?? []);
       setExtraApplicability((extrasRes.data as ExtraApplicability[]) ?? []);
+      setComboSectionLabel(comboSectionRes.data?.label ?? "الكومبوهات");
       setLoading(false);
     });
   }, []);
@@ -167,14 +172,14 @@ export function Menu() {
   // section instead of one long scroll.
   const sections = useMemo(() => {
     const list: { key: string; label: string }[] = [];
-    if (combos.length > 0) list.push({ key: "combos", label: "الكومبوهات" });
+    if (combos.length > 0) list.push({ key: "combos", label: comboSectionLabel });
     for (const category of categories) {
       if ((itemsByCategory.get(category.id) ?? []).length > 0) {
         list.push({ key: `cat-${category.id}`, label: category.name });
       }
     }
     return list;
-  }, [combos, categories, itemsByCategory]);
+  }, [combos, categories, itemsByCategory, comboSectionLabel]);
 
   useEffect(() => {
     if (sections.length > 0 && (!activeSection || !sections.some((s) => s.key === activeSection))) {
@@ -317,7 +322,7 @@ export function Menu() {
 
         {activeSection === "combos" && combos.length > 0 && (
           <section className="section" style={{ paddingBlock: "var(--space-4)" }}>
-            <h2 className="section-title">الكومبوهات</h2>
+            <h2 className="section-title">{comboSectionLabel}</h2>
             <div className="photo-grid">
               {combos.map((combo) => {
                 const groups = choiceGroupsByCombo.get(combo.id) ?? [];
@@ -340,7 +345,7 @@ export function Menu() {
                         <div key={group.id} className="combo-choice-group">
                           <p className="combo-choice-label">{group.label}</p>
                           <div className="combo-choice-options">
-                            {group.combo_choice_options.map((option) => (
+                            {group.combo_choice_options.filter((o) => o.is_available).map((option) => (
                               <label key={option.id} className="combo-choice-option">
                                 <input
                                   type="radio"

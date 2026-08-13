@@ -33,7 +33,7 @@ const ROLE_LABELS: Record<string, string> = {
   regional_manager: "مدير منطقة",
   general_manager: "مدير عام",
   team_leader: "تيم ليدر",
-  call_center: "كول سنتر",
+  call_center: "Agent",
 };
 
 async function callFunction<T>(name: string, body: unknown): Promise<T> {

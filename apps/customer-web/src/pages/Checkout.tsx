@@ -56,17 +56,30 @@ export function Checkout() {
     [selectedAddress, branches],
   );
   const [zoneFee, setZoneFee] = useState<number | null>(null);
+  const [zoneName, setZoneName] = useState<string | null>(null);
   useEffect(() => {
     if (!selectedAddress?.zone_id) {
       setZoneFee(null);
+      setZoneName(null);
       return;
     }
     supabase
       .from("delivery_zones")
-      .select("delivery_fee")
+      .select("delivery_fee, zone_name, is_active")
       .eq("id", selectedAddress.zone_id)
       .maybeSingle()
-      .then(({ data }) => setZoneFee(data?.delivery_fee ?? null));
+      .then(({ data }) => {
+        // A zone can be disabled after an address saved it - create-order
+        // treats that the same way (falls back to the branch's flat fee),
+        // so this mirrors that instead of showing a retired zone's fee.
+        if (!data || !data.is_active) {
+          setZoneFee(null);
+          setZoneName(null);
+          return;
+        }
+        setZoneFee(data.delivery_fee);
+        setZoneName(data.zone_name);
+      });
   }, [selectedAddress]);
   // Mirrors create-order's own fallback order (zone fee, then flat branch
   // fee) so what the customer sees here matches what actually gets charged.
@@ -269,8 +282,20 @@ export function Checkout() {
           <span>الإجمالي الفرعي</span>
           <span>{cart.total} ج</span>
         </div>
+        {servingBranch && (
+          <div className="checkout-line">
+            <span>الفرع</span>
+            <span>{servingBranch.name}</span>
+          </div>
+        )}
+        {zoneName && (
+          <div className="checkout-line">
+            <span>منطقة التوصيل</span>
+            <span>{zoneName}</span>
+          </div>
+        )}
         <div className="checkout-line">
-          <span>رسوم التوصيل{servingBranch && ` (${servingBranch.name})`}</span>
+          <span>رسوم التوصيل</span>
           <span>{deliveryFee} ج</span>
         </div>
         <div className="checkout-line checkout-total">

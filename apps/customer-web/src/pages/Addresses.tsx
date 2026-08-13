@@ -96,6 +96,7 @@ export function Addresses() {
       .from("delivery_zones")
       .select("id, branch_id, zone_name, delivery_fee")
       .eq("branch_id", Number(form.nearest_branch_id))
+      .eq("is_active", true)
       .order("zone_name")
       .then(({ data }) => {
         const loaded = (data as DeliveryZone[]) ?? [];

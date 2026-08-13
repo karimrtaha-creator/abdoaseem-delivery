@@ -150,6 +150,12 @@ body {
   .tab-btn-active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 700; }
 
   .content { padding: var(--space-3); }
+
+  /* BranchManagement.tsx's read-only "رسوم التوصيل" table column - on a
+     narrow screen the fee is still reachable inside each row's expanded
+     "إدارة" panel (the existing editable fee input), so this column would
+     just force horizontal scrolling for no new information. */
+  .hide-mobile { display: none; }
 }
 
 /* Screens for single-tab roles (dispatcher/call_center/team_leader) hide
@@ -173,6 +179,27 @@ body {
 .stat-label { font-size: 0.85rem; color: var(--muted); }
 .stat-tile-danger .stat-value { color: var(--danger); }
 .stat-tile-success .stat-value { color: var(--success-text); }
+
+/* Compact status-count strip (BranchManagement.tsx "ملخص اليوم") - meant
+   to sit below the big stat-tile hero row without repeating its visual
+   weight, so a manager isn't scanning a wall of identical boxes. */
+.status-pill-row { display: flex; gap: var(--space-2); flex-wrap: wrap; margin: var(--space-3) 0; }
+.status-pill {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.82rem;
+  color: var(--text);
+  font-family: inherit;
+}
+/* Some .status-pill usages are clickable <button> elements (e.g. combo
+   choice-option toggles) rather than plain <span> summaries. */
+button.status-pill { cursor: pointer; margin: 0; }
+button.status-pill:disabled { cursor: not-allowed; opacity: 0.6; }
+.status-pill-success { background: var(--success-bg); color: var(--success-text); border-color: transparent; }
+.status-pill-danger { background: var(--danger-bg); color: var(--danger); border-color: transparent; font-weight: 700; }
+.status-pill-muted { color: var(--muted); }
 
 .centered-page {
   min-height: 100vh;
@@ -362,17 +389,16 @@ input:focus, select:focus { outline: 2px solid var(--primary); outline-offset: 1
 .btn-danger:hover { background: var(--danger-bg); }
 .btn-danger:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.branch-stats { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
-.branch-stat-pill {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 4px 12px;
-  font-size: 0.85rem;
-}
-
 .pending-order-card { padding: var(--space-3); }
 .pending-order-header { display: flex; justify-content: space-between; margin-bottom: 4px; }
+
+/* MenuManagement.tsx product reorder buttons - the two arrows sit side by
+   side on their own row above the item's name/price, not squeezed into
+   the shared .pending-order-header (that class is reused by 5 other
+   screens, so it stays untouched). */
+.reorder-controls { display: flex; align-items: center; gap: 2px; margin-bottom: 4px; }
+.reorder-controls button { padding: 0 6px; line-height: 1.4; }
+.reorder-controls-hint { font-size: 0.78rem; margin-right: 4px; }
 .payment-proof-img { max-width: 220px; border-radius: var(--radius-sm); margin: var(--space-2) 0; display: block; }
 
 /* ---------- Data tables ---------- */

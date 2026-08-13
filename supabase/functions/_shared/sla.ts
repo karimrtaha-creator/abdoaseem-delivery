@@ -12,12 +12,19 @@ export async function lookupSlaMinutes(
   deliveryFeeAfterTax: number,
   branchId: number,
 ): Promise<number> {
+  // max_price IS NULL means "no upper limit" (the top, open-ended tier) -
+  // a plain .gte("max_price", X) never matches a NULL column in SQL, so
+  // that row was silently unreachable for every fee above the next-lower
+  // tier's cutoff (found live 2026-08-13 verifying the delivery-zones
+  // fallback path: 11 real sla_tiers rows across the system have
+  // max_price IS NULL). Explicitly OR in "max_price IS NULL" alongside
+  // the normal >= comparison so the open-ended tier can actually be hit.
   const { data: scoped, error: scopedError } = await admin
     .from("sla_tiers")
     .select("tier_id, min_price, max_price, sla_minutes")
     .eq("branch_id", branchId)
     .lte("min_price", deliveryFeeAfterTax)
-    .gte("max_price", deliveryFeeAfterTax)
+    .or(`max_price.is.null,max_price.gte.${deliveryFeeAfterTax}`)
     .order("tier_id", { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -29,7 +36,7 @@ export async function lookupSlaMinutes(
     .select("tier_id, min_price, max_price, sla_minutes")
     .is("branch_id", null)
     .lte("min_price", deliveryFeeAfterTax)
-    .gte("max_price", deliveryFeeAfterTax)
+    .or(`max_price.is.null,max_price.gte.${deliveryFeeAfterTax}`)
     .order("tier_id", { ascending: true })
     .limit(1)
     .maybeSingle();

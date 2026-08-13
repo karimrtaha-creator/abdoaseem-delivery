@@ -170,10 +170,19 @@ export function AcceptanceLobby() {
     return (id: number) => map.get(id) ?? `فرع #${id}`;
   }, [branches]);
 
+  // "Agent" (call_center role, 2026-08-11) sees this screen too now, for
+  // website orders only - narrowed further the same night (migration
+  // 0044) to drop phone-order visibility entirely, so RLS itself now
+  // guarantees `pendingOrders`/`ongoingOrders` never contain a
+  // call_center-sourced row for this role - no client-side filtering
+  // needed here anymore, the backend already only ever returns what
+  // they're meant to see.
+  const visiblePendingOrders = pendingOrders;
+
   // Repeats for as long as anything is still waiting - never a one-shot
   // ping, exactly per the ask: it doesn't stop until every pending order
   // has actually been accepted or rejected.
-  const hasPending = pendingOrders.length > 0;
+  const hasPending = visiblePendingOrders.length > 0;
   useEffect(() => {
     if (!hasPending) return;
     playNewOrderChime();
@@ -264,12 +273,15 @@ export function AcceptanceLobby() {
 
       <div className="card">
         <h2>ملخص اليوم</h2>
-        <p>
-          إجمالي الأوردرات المقبولة النهاردة: <strong>{totalAcceptedToday}</strong>
-        </p>
-        <div className="branch-stats">
+        <div className="stat-row">
+          <div className="stat-tile">
+            <span className="stat-value">{totalAcceptedToday}</span>
+            <span className="stat-label">إجمالي الأوردرات المقبولة النهاردة</span>
+          </div>
+        </div>
+        <div className="status-pill-row">
           {branches.map((b) => (
-            <span key={b.id} className="branch-stat-pill">
+            <span key={b.id} className="status-pill">
               {b.name}: {acceptedTodayByBranch.get(b.id) ?? 0}
             </span>
           ))}
@@ -277,11 +289,11 @@ export function AcceptanceLobby() {
       </div>
 
       <div className="card">
-        <h2>بانتظار القبول ({pendingOrders.length})</h2>
+        <h2>بانتظار القبول ({visiblePendingOrders.length})</h2>
         {error && <p className="error-text">{error}</p>}
-        {pendingOrders.length === 0 && <p className="muted">مفيش أوردرات بانتظار القبول.</p>}
+        {visiblePendingOrders.length === 0 && <p className="muted">مفيش أوردرات بانتظار القبول.</p>}
         <div className="order-list">
-          {pendingOrders.map((o) => (
+          {visiblePendingOrders.map((o) => (
             <div key={o.id} className="card pending-order-card">
               <div className="pending-order-header">
                 <strong>أوردر #{o.id}</strong>

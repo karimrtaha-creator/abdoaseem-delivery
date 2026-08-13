@@ -33,7 +33,7 @@ type TabKey =
 
 const ROLE_TITLES: Record<string, string> = {
   dispatcher: "ديسباتشر",
-  call_center: "كول سنتر",
+  call_center: "Agent", // renamed from "كول سنتر" 2026-08-11 - same role (order_source scoping unchanged), new label + widened job (see AcceptanceLobby)
   team_leader: "تيم ليدر",
   general_manager: "مدير عام",
   regional_manager: "مدير منطقة",
@@ -52,10 +52,21 @@ const TABS_BY_ROLE: Record<string, { key: TabKey; label: string }[]> = {
   // device, one app. The empty array here hits the zero-tabs gate below,
   // which shows a dispatcher-specific message pointing to the mobile app.
   dispatcher: [],
-  call_center: [{ key: "call_center", label: "أوردر جديد" }],
+  // call_center ("Agent") narrowed same night, twice: first gained
+  // "acceptance" alongside the existing "call_center" phone-order tab,
+  // then Karim corrected it further - Agent handles website orders ONLY,
+  // full stop, never the phone-order screen. RLS (migration 0044) backs
+  // this up too - a call_center caller can't even see call_center-sourced
+  // orders anymore, not just "doesn't have the tab for it".
+  call_center: [{ key: "acceptance", label: "أوردرات الموقع" }],
+  // dashboard + menu_availability added 2026-08-11 (Karim's explicit
+  // instruction): team_leader needs to see delayed orders and be able to
+  // stop/activate a menu item, not just accept/reject + the driver map.
   team_leader: [
     { key: "acceptance", label: "قبول الأوردرات" },
+    { key: "dashboard", label: "لوحة المتابعة" },
     { key: "driver_map", label: "مواقع الطيارين" },
+    { key: "menu_availability", label: "إقفال الأصناف" },
     { key: "business_hours", label: "مواعيد العمل" },
   ],
   general_manager: [
@@ -67,7 +78,7 @@ const TABS_BY_ROLE: Record<string, { key: TabKey; label: string }[]> = {
     { key: "staff_requests", label: "طلبات التسجيل" },
     { key: "users", label: "إدارة المستخدمين" },
     { key: "branches", label: "الفروع والمناطق" },
-    { key: "menu_photos", label: "صور المنتجات" },
+    { key: "menu_photos", label: "المنيو" },
     { key: "menu_availability", label: "إقفال الأصناف" },
     { key: "business_hours", label: "مواعيد العمل" },
   ],
@@ -126,7 +137,7 @@ const TAB_TITLES: Record<TabKey, string> = {
   performance: "أداء الطيارين",
   complaints: "الشكاوى",
   branches: "الفروع والمناطق",
-  menu_photos: "صور المنتجات",
+  menu_photos: "المنيو",
   menu_availability: "إقفال الأصناف",
   business_hours: "مواعيد العمل",
   driver_map: "مواقع الطيارين",

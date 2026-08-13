@@ -102,11 +102,14 @@ async function finishOrder(
   const { data: choiceGroupsData, error: choiceGroupsError } = comboIds.length
     ? await admin
         .from("combo_choice_groups")
-        .select("id, combo_offer_id, label, combo_choice_options(id, label)")
+        .select("id, combo_offer_id, label, combo_choice_options(id, label, is_available)")
         .in("combo_offer_id", comboIds)
     : { data: [], error: null };
   if (choiceGroupsError) return errorResponse(choiceGroupsError.message, 500);
-  const choiceGroupsByCombo = new Map<number, { id: number; label: string; combo_choice_options: { id: number; label: string }[] }[]>();
+  const choiceGroupsByCombo = new Map<
+    number,
+    { id: number; label: string; combo_choice_options: { id: number; label: string; is_available: boolean }[] }[]
+  >();
   for (const group of choiceGroupsData ?? []) {
     const list = choiceGroupsByCombo.get(group.combo_offer_id) ?? [];
     list.push(group);
@@ -153,6 +156,15 @@ async function finishOrder(
           const matches = group.combo_choice_options.filter((o) => providedIds.has(o.id));
           if (matches.length !== 1) {
             return errorResponse(`combo_offer_id ${item.combo_offer_id}: exactly one option required for '${group.label}'`, 422);
+          }
+          // Re-checked here, not just hidden client-side - a disabled
+          // option (manage via المنيو's per-option toggle) must be
+          // unselectable even if a stale/tampered client still sends it.
+          if (!matches[0].is_available) {
+            return errorResponse(
+              `combo_offer_id ${item.combo_offer_id}: option '${matches[0].label}' is not available`,
+              422,
+            );
           }
           parts.push(`${group.label}: ${matches[0].label}`);
         }
@@ -323,12 +335,18 @@ serveWithCors(async (req) => {
     if (address.zone_id) {
       const { data: zone, error: zoneError } = await admin
         .from("delivery_zones")
-        .select("delivery_fee, zone_name")
+        .select("delivery_fee, zone_name, is_active")
         .eq("id", address.zone_id)
         .single();
       if (zoneError) return errorResponse(zoneError.message, 500);
-      zoneDeliveryFee = zone?.delivery_fee ?? null;
-      zoneName = zone?.zone_name ?? null;
+      // A zone can be disabled (manage-delivery-zone) after an address
+      // saved it - treat that exactly like "no zone_id set" rather than
+      // silently charging a retired zone's fee, falling through to the
+      // branch's flat delivery_fee below like any zone-less address.
+      if (zone?.is_active) {
+        zoneDeliveryFee = zone.delivery_fee;
+        zoneName = zone.zone_name;
+      }
     }
 
     const { data: branch, error: branchError } = await admin
