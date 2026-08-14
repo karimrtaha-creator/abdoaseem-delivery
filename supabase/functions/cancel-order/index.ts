@@ -81,11 +81,23 @@ serveWithCors(async (req) => {
     }
   }
 
-  const { error: updateError } = await admin
+  // Guarded on the same allowed-statuses list just checked above (customer
+  // vs staff) - a concurrent transition (another staff member cancelling
+  // the same order, or the order moving on to its next status naturally
+  // between the read and this write) means the WHERE clause simply
+  // matches nothing, instead of this call silently overwriting whatever
+  // the order actually became.
+  const allowedStatuses = isStaff ? STAFF_CANCELLABLE_STATUSES : CUSTOMER_CANCELLABLE_STATUSES;
+  const { data: updatedRows, error: updateError } = await admin
     .from("orders")
     .update({ status: "cancelled", cancellation_reason: reason, cancelled_by: caller.id })
-    .eq("id", order_id);
+    .eq("id", order_id)
+    .in("status", allowedStatuses)
+    .select("id");
   if (updateError) return dbErrorResponse("cancel-order", updateError.message);
+  if (!updatedRows || updatedRows.length === 0) {
+    return errorResponse("order status changed before it could be cancelled - someone else already acted on it", 409);
+  }
 
   await logAudit(admin, caller, "order_cancelled", "order", order_id, {
     pos_order_id: order.pos_order_id,

@@ -96,7 +96,14 @@ serveWithCors(async (req) => {
   const dispatchTime = new Date();
   const prepTimeMinutes = minutesBetween(order.accepted_at, dispatchTime);
 
-  const { error: updateError } = await admin
+  // Guarded on the same "still awaiting dispatch" condition checked above
+  // (statusAllowsDispatch), re-expressed as a WHERE clause so a concurrent
+  // dispatcher racing on the same order can't both succeed - only the
+  // first caller whose UPDATE actually matches a row wins; the second
+  // sees zero rows affected and gets a real 409 instead of a false-
+  // positive "out_for_delivery" (with two drivers dispatched, two OTPs
+  // generated, etc.).
+  const { data: updatedRows, error: updateError } = await admin
     .from("orders")
     .update({
       driver_id,
@@ -108,8 +115,14 @@ serveWithCors(async (req) => {
       sla_minutes: slaMinutes,
       status: "out_for_delivery",
     })
-    .eq("id", order_id);
+    .eq("id", order_id)
+    .in("status", ["ready_for_driver", "delayed"])
+    .is("dispatch_time", null)
+    .select("id");
   if (updateError) return dbErrorResponse("dispatch-order", updateError.message);
+  if (!updatedRows || updatedRows.length === 0) {
+    return errorResponse("order status changed before it could be dispatched - someone else already acted on it", 409);
+  }
 
   await logAudit(admin, caller, "order_dispatched", "order", order_id, {
     pos_order_id: order.pos_order_id,

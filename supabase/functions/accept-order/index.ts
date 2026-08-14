@@ -56,11 +56,22 @@ serveWithCors(async (req) => {
   }
 
   if (action === "reject") {
-    const { error: updateError } = await admin
+    // Guarded on the status this read above found, not just the id - the
+    // same race a concurrent caller (another team_leader/GM/call_center
+    // agent) could win between this read and this write. Only the first
+    // caller to land here while status is still 'pending_acceptance'
+    // actually transitions it; a second caller sees zero rows affected
+    // and gets a real 409 instead of a false-positive "rejected".
+    const { data: updatedRows, error: updateError } = await admin
       .from("orders")
       .update({ status: "rejected" })
-      .eq("id", order_id);
+      .eq("id", order_id)
+      .eq("status", "pending_acceptance")
+      .select("id");
     if (updateError) return dbErrorResponse("accept-order", updateError.message);
+    if (!updatedRows || updatedRows.length === 0) {
+      return errorResponse("order status changed before it could be rejected - someone else already acted on it", 409);
+    }
     await logAudit(admin, caller, "order_rejected", "order", order_id, { pos_order_id: order.pos_order_id });
     return jsonResponse({ order_id, status: "rejected" });
   }
@@ -73,16 +84,22 @@ serveWithCors(async (req) => {
     );
   }
 
-  const { error: updateError } = await admin
+  // Same guarded-update race protection as the reject branch above.
+  const { data: updatedRows, error: updateError } = await admin
     .from("orders")
     .update({
       status: "preparing",
       accepted_by: caller.id,
       accepted_at: new Date().toISOString(),
     })
-    .eq("id", order_id);
+    .eq("id", order_id)
+    .eq("status", "pending_acceptance")
+    .select("id");
 
   if (updateError) return dbErrorResponse("accept-order", updateError.message);
+  if (!updatedRows || updatedRows.length === 0) {
+    return errorResponse("order status changed before it could be accepted - someone else already acted on it", 409);
+  }
 
   await logAudit(admin, caller, "order_accepted", "order", order_id, { pos_order_id: order.pos_order_id });
 
