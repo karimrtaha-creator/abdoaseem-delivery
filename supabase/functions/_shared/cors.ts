@@ -62,6 +62,21 @@ export function errorResponse(message: string, status = 400): Response {
   return jsonResponse({ error: message }, status);
 }
 
+// Security audit finding F-02: raw error.message from a Supabase/Postgres
+// client call (a failed .from()/.rpc() call, always used with a 500)
+// used to go straight into the HTTP response body - internal type/
+// column/constraint details, occasionally the query shape itself. The
+// raw detail is still fully visible server-side (Supabase Function
+// Logs, via the console.error below), just never in what the client
+// receives. Only for genuine DB-operation failures - a hand-written,
+// already-safe 4xx message (e.g. "order_id is required") stays exactly
+// as errorResponse() already returns it; this isn't a replacement for
+// that, only for the specific "just forward .message" pattern.
+export function dbErrorResponse(context: string, rawMessage: string, status = 500): Response {
+  console.error(`${context}: ${rawMessage}`);
+  return errorResponse("something went wrong on our end - please try again", status);
+}
+
 // Karim's explicit instruction (2026-08-11, dispatcher-photo-gate feature):
 // dispatcher must do 100% of their work through the mobile app, never
 // dispatcher-web, and that has to be enforced server-side, not just by

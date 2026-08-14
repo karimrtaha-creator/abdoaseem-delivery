@@ -1,0 +1,15 @@
+-- 0053 wired public.hook_password_verification_attempt as a Supabase Auth
+-- "Password Verification Attempt" hook to fix M-01 without touching
+-- either frontend app. Wiring it (supabase config push) was rejected by
+-- the platform itself: "unexpected status 402: The following auth hooks
+-- cannot be configured for this organization: HOOK_PASSWORD_VERIFICATION_ATTEMPT"
+-- - this hook type is gated to a paid plan tier this project isn't on, a
+-- billing constraint, not something fixable in code. The push failed
+-- atomically before touching any other auth setting (confirmed by
+-- re-running it and seeing the identical error+diff both times), so
+-- nothing else was affected - but the function itself is now genuinely
+-- unreachable (nothing can ever invoke it) and stayed applied from the
+-- migration that created it. M-01 is fixed instead via a login-proxy
+-- edge function (see supabase/functions/login) - drop the dead-end here
+-- rather than leave inert unused code behind.
+drop function if exists public.hook_password_verification_attempt(jsonb);

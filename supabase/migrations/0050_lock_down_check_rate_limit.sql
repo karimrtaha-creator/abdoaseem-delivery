@@ -1,0 +1,14 @@
+-- Security audit finding H-01 (2026-08-14): check_rate_limit() is
+-- SECURITY DEFINER, and Postgres grants EXECUTE on new functions to
+-- PUBLIC by default - since PostgREST auto-exposes any public-schema
+-- function as an RPC endpoint, this meant any client holding just the
+-- anon key (or an authenticated session) could call it directly with an
+-- arbitrary p_key, bypassing every edge function and writing straight to
+-- rate_limits. Live-confirmed: an anon call with p_key:"anon-test:x"
+-- succeeded and wrote a real row.
+--
+-- service_role is unaffected by this revoke - it already has EXECUTE on
+-- every public-schema function via 0004's explicit grant and its
+-- `alter default privileges ... grant execute on functions` rule, both
+-- independent of the PUBLIC grant being removed here.
+revoke execute on function public.check_rate_limit(text, int, int) from public, anon, authenticated;

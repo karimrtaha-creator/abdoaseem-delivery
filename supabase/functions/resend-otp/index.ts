@@ -8,7 +8,7 @@
 // attempt lock: resetting attempts to 0 on demand means unlimited guesses
 // in batches of MAX_ATTEMPTS. See verify-otp/index.ts for why business
 // outcomes here also return HTTP 200 + a `result` field.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { generateOtpCode } from "../_shared/sla.ts";
 import { sendOtpToCustomer } from "../_shared/notify.ts";
@@ -58,7 +58,7 @@ serveWithCors(async (req) => {
     .from("otp_codes")
     .select("id", { count: "exact", head: true })
     .eq("order_id", order_id);
-  if (countError) return errorResponse(countError.message, 500);
+  if (countError) return dbErrorResponse("resend-otp", countError.message);
 
   if ((codesSoFar ?? 0) > MAX_RESENDS) {
     // Log only, not a complaints row - see the matching note in
@@ -81,7 +81,7 @@ serveWithCors(async (req) => {
     .insert({ order_id, code, expires_at: expiresAt.toISOString() })
     .select("id")
     .single();
-  if (insertError) return errorResponse(insertError.message, 500);
+  if (insertError) return dbErrorResponse("resend-otp", insertError.message);
 
   const sendResult = await sendOtpToCustomer(order.customer_phone, code, order_id);
 

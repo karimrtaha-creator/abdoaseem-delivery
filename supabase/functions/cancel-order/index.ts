@@ -12,7 +12,7 @@
 //      that's what accept-order's "reject" action is for.
 // A reason is required on both paths and stored so anyone reviewing the
 // order later can see exactly why it was cancelled.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { sendPush } from "../_shared/fcm.ts";
 import { checkRateLimit } from "../_shared/rateLimit.ts";
@@ -85,7 +85,7 @@ serveWithCors(async (req) => {
     .from("orders")
     .update({ status: "cancelled", cancellation_reason: reason, cancelled_by: caller.id })
     .eq("id", order_id);
-  if (updateError) return errorResponse(updateError.message, 500);
+  if (updateError) return dbErrorResponse("cancel-order", updateError.message);
 
   await logAudit(admin, caller, "order_cancelled", "order", order_id, {
     pos_order_id: order.pos_order_id,

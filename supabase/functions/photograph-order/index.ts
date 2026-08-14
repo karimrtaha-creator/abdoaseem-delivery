@@ -11,7 +11,7 @@
 // to their own branch's folder, confirmed live and predating this
 // feature). This function only records the resulting URL and performs
 // the status transition - it never handles raw file bytes.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors, isBrowserRequest } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, isBrowserRequest, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { logAudit } from "../_shared/audit.ts";
 import { checkRateLimit } from "../_shared/rateLimit.ts";
@@ -93,7 +93,7 @@ serveWithCors(async (req) => {
     .insert({ order_id, dispatcher_id: caller.id, photo_url })
     .select("id, photographed_at")
     .single();
-  if (photoError) return errorResponse(photoError.message, 500);
+  if (photoError) return dbErrorResponse("photograph-order", photoError.message);
 
   // The `.eq("status", "preparing")` guard makes this atomic against a
   // race (two dispatchers photographing the same order at once, or a
@@ -109,7 +109,7 @@ serveWithCors(async (req) => {
     .eq("id", order_id)
     .eq("status", "preparing")
     .select("id");
-  if (updateError) return errorResponse(updateError.message, 500);
+  if (updateError) return dbErrorResponse("photograph-order", updateError.message);
   if (!updatedRows || updatedRows.length === 0) {
     // The photo row above still exists and is harmless (multiple photos
     // per order are allowed by design) - just report that someone else

@@ -7,7 +7,7 @@
 // team_leader (delivery_zones_write_general_manager, unchanged here) -
 // this function re-checks the same restriction independently and adds the
 // audit trail, matching update-branch-delivery-fee's pattern.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { logAudit } from "../_shared/audit.ts";
 
@@ -23,6 +23,15 @@ interface Body {
 }
 
 const AUTHORIZED_ROLES = ["general_manager", "team_leader"];
+
+// Security audit finding F-03: only a lower bound (>= 0) was ever
+// checked - an absurd fee (e.g. 99999999999999) was accepted outright.
+// This upper bound is a placeholder pending a real number from Karim;
+// easy to change in one place. Mirrored in update-branch-delivery-fee
+// for the same reason MAX_ATTEMPTS/OTP_VALIDITY_MINUTES are duplicated
+// rather than shared elsewhere in this project - two call sites doesn't
+// justify a new shared module.
+const MAX_DELIVERY_FEE = 500;
 
 serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -49,8 +58,8 @@ serveWithCors(async (req) => {
     const fee = body.delivery_fee;
     if (!branchId) return errorResponse("branch_id is required");
     if (!zoneName) return errorResponse("zone_name is required");
-    if (typeof fee !== "number" || !Number.isFinite(fee) || fee < 0) {
-      return errorResponse("delivery_fee must be a number >= 0");
+    if (typeof fee !== "number" || !Number.isFinite(fee) || fee < 0 || fee > MAX_DELIVERY_FEE) {
+      return errorResponse(`delivery_fee must be a number between 0 and ${MAX_DELIVERY_FEE}`);
     }
 
     const { data: branch } = await admin.from("branches").select("id, name").eq("id", branchId).maybeSingle();
@@ -65,7 +74,7 @@ serveWithCors(async (req) => {
       if (insertError.code === "23505") {
         return errorResponse(`فيه منطقة اسمها "${zoneName}" في ${branch.name} خالص`, 409);
       }
-      return errorResponse(insertError.message, 500);
+      return dbErrorResponse("manage-delivery-zone", insertError.message);
     }
 
     await logAudit(admin, caller, "DELIVERY_ZONE_CREATED", "delivery_zone", zone.id, {
@@ -94,8 +103,13 @@ serveWithCors(async (req) => {
       updates.zone_name = trimmed;
     }
     if (body.delivery_fee != null) {
-      if (typeof body.delivery_fee !== "number" || !Number.isFinite(body.delivery_fee) || body.delivery_fee < 0) {
-        return errorResponse("delivery_fee must be a number >= 0");
+      if (
+        typeof body.delivery_fee !== "number" ||
+        !Number.isFinite(body.delivery_fee) ||
+        body.delivery_fee < 0 ||
+        body.delivery_fee > MAX_DELIVERY_FEE
+      ) {
+        return errorResponse(`delivery_fee must be a number between 0 and ${MAX_DELIVERY_FEE}`);
       }
       updates.delivery_fee = body.delivery_fee;
     }
@@ -106,7 +120,7 @@ serveWithCors(async (req) => {
       if (updateError.code === "23505") {
         return errorResponse(`فيه منطقة تانية بنفس الاسم في نفس الفرع`, 409);
       }
-      return errorResponse(updateError.message, 500);
+      return dbErrorResponse("manage-delivery-zone", updateError.message);
     }
 
     if (updates.delivery_fee != null && updates.delivery_fee !== Number(zone.delivery_fee)) {
@@ -143,7 +157,7 @@ serveWithCors(async (req) => {
       .from("delivery_zones")
       .update({ is_active: body.is_active })
       .eq("id", zoneId);
-    if (updateError) return errorResponse(updateError.message, 500);
+    if (updateError) return dbErrorResponse("manage-delivery-zone", updateError.message);
 
     await logAudit(admin, caller, body.is_active ? "DELIVERY_ZONE_ENABLED" : "DELIVERY_ZONE_DISABLED", "delivery_zone", zoneId, {
       branch_id: zone.branch_id,
@@ -177,7 +191,7 @@ serveWithCors(async (req) => {
     // outright, same way MenuManagement.tsx handles an un-deletable item.
     if (deleteError.code === "23503") {
       const { error: disableError } = await admin.from("delivery_zones").update({ is_active: false }).eq("id", zoneId);
-      if (disableError) return errorResponse(disableError.message, 500);
+      if (disableError) return dbErrorResponse("manage-delivery-zone", disableError.message);
       await logAudit(admin, caller, "DELIVERY_ZONE_DISABLED", "delivery_zone", zoneId, {
         branch_id: zone.branch_id,
         zone_name: zone.zone_name,
@@ -185,7 +199,7 @@ serveWithCors(async (req) => {
       });
       return jsonResponse({ zone_id: zoneId, deleted: false, soft_deleted: true });
     }
-    return errorResponse(deleteError.message, 500);
+    return dbErrorResponse("manage-delivery-zone", deleteError.message);
   }
 
   return errorResponse("action must be one of: create, update, toggle_active, delete");

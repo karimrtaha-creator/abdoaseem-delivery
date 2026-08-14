@@ -6,7 +6,7 @@
 // the change now also needs an audit trail, and audit_log has no
 // client-reachable INSERT at all (service_role only) - so this needs an
 // edge function, same as every other audited mutation in this project.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { logAudit } from "../_shared/audit.ts";
 
@@ -14,6 +14,10 @@ interface UpdateFeeBody {
   branch_id?: number;
   delivery_fee?: number;
 }
+
+// Security audit finding F-03: mirrored from manage-delivery-zone.ts -
+// placeholder pending a real number from Karim.
+const MAX_DELIVERY_FEE = 500;
 
 serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -34,8 +38,8 @@ serveWithCors(async (req) => {
 
   const { branch_id: branchId, delivery_fee: newFee } = body;
   if (!branchId) return errorResponse("branch_id is required");
-  if (typeof newFee !== "number" || !Number.isFinite(newFee) || newFee < 0) {
-    return errorResponse("delivery_fee must be a number >= 0");
+  if (typeof newFee !== "number" || !Number.isFinite(newFee) || newFee < 0 || newFee > MAX_DELIVERY_FEE) {
+    return errorResponse(`delivery_fee must be a number between 0 and ${MAX_DELIVERY_FEE}`);
   }
 
   const admin = getAdminClient();
@@ -45,7 +49,7 @@ serveWithCors(async (req) => {
     .select("id, name, delivery_fee")
     .eq("id", branchId)
     .maybeSingle();
-  if (branchError) return errorResponse(branchError.message, 500);
+  if (branchError) return dbErrorResponse("update-branch-delivery-fee", branchError.message);
   if (!branch) return errorResponse("branch not found", 404);
 
   const oldFee = Number(branch.delivery_fee);
@@ -54,7 +58,7 @@ serveWithCors(async (req) => {
   }
 
   const { error: updateError } = await admin.from("branches").update({ delivery_fee: newFee }).eq("id", branchId);
-  if (updateError) return errorResponse(updateError.message, 500);
+  if (updateError) return dbErrorResponse("update-branch-delivery-fee", updateError.message);
 
   await logAudit(admin, caller, "BRANCH_DELIVERY_FEE_CHANGED", "branch", branchId, {
     branch_name: branch.name,

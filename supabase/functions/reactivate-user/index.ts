@@ -6,7 +6,7 @@
 // alone would still let an old, not-yet-expired session read data even if
 // re-login stayed blocked, and clearing only the ban without is_active
 // would leave RLS still shutting them out.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { logAudit } from "../_shared/audit.ts";
 
@@ -38,7 +38,7 @@ serveWithCors(async (req) => {
     .select("id, role, branch_id, region_id, is_active, name")
     .eq("id", targetId)
     .maybeSingle();
-  if (targetError) return errorResponse(targetError.message, 500);
+  if (targetError) return dbErrorResponse("reactivate-user", targetError.message);
   if (!target) return errorResponse("user not found", 404);
 
   if (caller.role === "regional_manager") {
@@ -71,7 +71,7 @@ serveWithCors(async (req) => {
     .from("users")
     .update({ is_active: true })
     .eq("id", targetId);
-  if (updateError) return errorResponse(updateError.message, 500);
+  if (updateError) return dbErrorResponse("reactivate-user", updateError.message);
 
   const { error: unbanError } = await admin.auth.admin.updateUserById(targetId, {
     ban_duration: "none",

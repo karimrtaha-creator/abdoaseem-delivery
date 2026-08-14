@@ -71,9 +71,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signIn(phone: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({
-      email: phoneToCustomerEmail(phone),
-      password,
+    // Routed through the login edge function (security audit finding
+    // M-01) instead of calling signInWithPassword directly, so a
+    // server-side per-account attempt limit can actually apply - nothing
+    // else about this flow changed, same synthetic email, same generic
+    // error message on any failure.
+    const { data, error: fnError } = await supabase.functions.invoke("login", {
+      body: { email: phoneToCustomerEmail(phone), password },
+    });
+    if (fnError) throw new Error("رقم التليفون أو الباسورد غلط");
+    const { error } = await supabase.auth.setSession({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
     });
     if (error) throw new Error("رقم التليفون أو الباسورد غلط");
   }

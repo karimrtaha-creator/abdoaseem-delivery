@@ -3,7 +3,7 @@
 // its line items in one server-side call. Prices are always re-fetched
 // from menu_items/combo_offers here - a client-supplied price is never
 // trusted, so a tampered request can't under-charge an order.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { checkRateLimit } from "../_shared/rateLimit.ts";
 import { lookupSlaMinutes } from "../_shared/sla.ts";
@@ -16,6 +16,17 @@ interface CartItem {
   combo_choice_option_ids?: number[];
   note?: string;
 }
+
+// Security audit finding M-02: quantity used to be checked with just
+// `!item.quantity || item.quantity <= 0`, which passed decimals (1.5),
+// non-integers coerced to true-ish, and anything huge - a malformed
+// quantity (1.5, 1e308) got past this check, then failed later at the
+// order_items insert (a real Postgres integer-column error), by which
+// point the parent orders row had already been written with no items
+// (a separate, still-open data-integrity issue - Batch 3). This business
+// maximum (20/line) is a placeholder pending a real number from Karim;
+// easy to change in one place.
+const MAX_ITEM_QUANTITY = 20;
 
 // Cairo-local "HH:MM" for the current instant - the server itself runs in
 // UTC, and Egypt's offset isn't hardcoded here on purpose (DST history has
@@ -87,8 +98,8 @@ async function finishOrder(
       ? admin.from("combo_offers").select("id, price, is_active").in("id", comboIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
-  if (menuItemsRes.error) return errorResponse(menuItemsRes.error.message, 500);
-  if (combosRes.error) return errorResponse(combosRes.error.message, 500);
+  if (menuItemsRes.error) return dbErrorResponse("create-order", menuItemsRes.error.message);
+  if (combosRes.error) return dbErrorResponse("create-order", combosRes.error.message);
 
   const menuItemPrices = new Map((menuItemsRes.data ?? []).map((m) => [m.id, m]));
   const comboPrices = new Map((combosRes.data ?? []).map((c) => [c.id, c]));
@@ -105,7 +116,7 @@ async function finishOrder(
         .select("id, combo_offer_id, label, combo_choice_options(id, label, is_available)")
         .in("combo_offer_id", comboIds)
     : { data: [], error: null };
-  if (choiceGroupsError) return errorResponse(choiceGroupsError.message, 500);
+  if (choiceGroupsError) return dbErrorResponse("create-order", choiceGroupsError.message);
   const choiceGroupsByCombo = new Map<
     number,
     { id: number; label: string; combo_choice_options: { id: number; label: string; is_available: boolean }[] }[]
@@ -195,7 +206,7 @@ async function finishOrder(
       .select("delivery_fee")
       .eq("id", args.branch_id)
       .single();
-    if (feeBranchError) return errorResponse(feeBranchError.message, 500);
+    if (feeBranchError) return dbErrorResponse("create-order", feeBranchError.message);
     deliveryFee = feeBranch?.delivery_fee ?? 0;
   }
 
@@ -283,8 +294,13 @@ serveWithCors(async (req) => {
     if (hasMenuItem === hasCombo) {
       return errorResponse("each item must have exactly one of menu_item_id or combo_offer_id");
     }
-    if (!item.quantity || item.quantity <= 0) {
-      return errorResponse("each item needs a quantity > 0");
+    if (
+      typeof item.quantity !== "number" ||
+      !Number.isInteger(item.quantity) ||
+      item.quantity < 1 ||
+      item.quantity > MAX_ITEM_QUANTITY
+    ) {
+      return errorResponse(`each item needs an integer quantity between 1 and ${MAX_ITEM_QUANTITY}`);
     }
   }
 
@@ -338,7 +354,7 @@ serveWithCors(async (req) => {
         .select("delivery_fee, zone_name, is_active")
         .eq("id", address.zone_id)
         .single();
-      if (zoneError) return errorResponse(zoneError.message, 500);
+      if (zoneError) return dbErrorResponse("create-order", zoneError.message);
       // A zone can be disabled (manage-delivery-zone) after an address
       // saved it - treat that exactly like "no zone_id set" rather than
       // silently charging a retired zone's fee, falling through to the
@@ -427,7 +443,7 @@ serveWithCors(async (req) => {
     .eq("phone", customerPhone)
     .eq("role", "customer")
     .maybeSingle();
-  if (findError) return errorResponse(findError.message, 500);
+  if (findError) return dbErrorResponse("create-order", findError.message);
 
   if (existingCustomer) {
     customerId = existingCustomer.id;
@@ -463,10 +479,10 @@ serveWithCors(async (req) => {
       .update(profileFields)
       .eq("id", customerId)
       .select("id");
-    if (updateUserError) return errorResponse(updateUserError.message, 500);
+    if (updateUserError) return dbErrorResponse("create-order", updateUserError.message);
     if (!updatedRows || updatedRows.length === 0) {
       const { error: insertUserError } = await admin.from("users").insert({ id: customerId, ...profileFields });
-      if (insertUserError) return errorResponse(insertUserError.message, 500);
+      if (insertUserError) return dbErrorResponse("create-order", insertUserError.message);
     }
 
     const { error: createProfileError } = await admin.from("customers_profile").insert({
@@ -477,7 +493,7 @@ serveWithCors(async (req) => {
       area: body.address?.area ?? null,
       nearest_branch_id: branchId,
     });
-    if (createProfileError) return errorResponse(createProfileError.message, 500);
+    if (createProfileError) return dbErrorResponse("create-order", createProfileError.message);
   }
 
   return await finishOrder(admin, {

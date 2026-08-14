@@ -20,7 +20,7 @@
 // region, so neither regional_manager nor branch_manager (whose whole
 // authority is branch/region-scoped) can ever create one. This is not an
 // oversight; it's the intended design.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller, AppRole } from "../_shared/auth.ts";
 import { logAudit } from "../_shared/audit.ts";
 import { BRANCH_SCOPED_ROLES, REGION_SCOPED_ROLES, ALL_STAFF_ROLES } from "../_shared/roleScopes.ts";
@@ -148,10 +148,10 @@ serveWithCors(async (req) => {
     .update(profileFields)
     .eq("id", newUserId)
     .select("id");
-  if (updateError) return errorResponse(updateError.message, 500);
+  if (updateError) return dbErrorResponse("create-user", updateError.message);
   if (!updatedRows || updatedRows.length === 0) {
     const { error: insertError } = await admin.from("users").insert({ id: newUserId, ...profileFields });
-    if (insertError) return errorResponse(insertError.message, 500);
+    if (insertError) return dbErrorResponse("create-user", insertError.message);
   }
 
   // Finding #006: never log the password - initial_password is the one

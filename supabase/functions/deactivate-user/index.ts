@@ -17,7 +17,7 @@
 // Neither one alone is enough: RLS-only leaves them able to keep logging
 // back in; ban-only leaves an already-cached, not-yet-expired access
 // token free to keep reading data until it naturally expires.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { logAudit } from "../_shared/audit.ts";
 
@@ -53,7 +53,7 @@ serveWithCors(async (req) => {
     .select("id, role, branch_id, region_id, is_active, name")
     .eq("id", targetId)
     .maybeSingle();
-  if (targetError) return errorResponse(targetError.message, 500);
+  if (targetError) return dbErrorResponse("deactivate-user", targetError.message);
   if (!target) return errorResponse("user not found", 404);
 
   if (caller.role === "regional_manager") {
@@ -87,7 +87,7 @@ serveWithCors(async (req) => {
     .from("users")
     .update({ is_active: false })
     .eq("id", targetId);
-  if (updateError) return errorResponse(updateError.message, 500);
+  if (updateError) return dbErrorResponse("deactivate-user", updateError.message);
 
   const { error: banError } = await admin.auth.admin.updateUserById(targetId, {
     ban_duration: "876000h", // ~100 years - Supabase has no literal "forever", this is the accepted convention

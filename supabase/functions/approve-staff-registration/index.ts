@@ -12,7 +12,7 @@
 // the stored request - if a branch/region was deleted or changed between
 // submission and review, approval fails with a clear error instead of
 // silently granting access to something that no longer exists.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller, AppRole } from "../_shared/auth.ts";
 import { logAudit } from "../_shared/audit.ts";
 import { checkRateLimit } from "../_shared/rateLimit.ts";
@@ -70,7 +70,7 @@ serveWithCors(async (req) => {
       })
       .eq("id", request_id)
       .eq("status", "pending");
-    if (updateError) return errorResponse(updateError.message, 500);
+    if (updateError) return dbErrorResponse("approve-staff-registration", updateError.message);
     await logAudit(admin, caller, "staff_registration_rejected", "staff_registration_request", request_id, {
       requested_name: reqRow.requested_name,
       requested_role: reqRow.requested_role,
@@ -135,14 +135,14 @@ serveWithCors(async (req) => {
     is_active: true,
   };
   const { error: userUpdateError } = await admin.from("users").update(profileFields).eq("id", reqRow.user_id);
-  if (userUpdateError) return errorResponse(userUpdateError.message, 500);
+  if (userUpdateError) return dbErrorResponse("approve-staff-registration", userUpdateError.message);
 
   const { error: reqUpdateError } = await admin
     .from("staff_registration_requests")
     .update({ status: "approved", reviewed_by: caller.id, reviewed_at: new Date().toISOString() })
     .eq("id", request_id)
     .eq("status", "pending");
-  if (reqUpdateError) return errorResponse(reqUpdateError.message, 500);
+  if (reqUpdateError) return dbErrorResponse("approve-staff-registration", reqUpdateError.message);
 
   await logAudit(admin, caller, "staff_registration_approved", "staff_registration_request", request_id, {
     user_id: reqRow.user_id,

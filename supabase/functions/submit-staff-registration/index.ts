@@ -4,7 +4,7 @@
 // Requesting a role never grants it - only approve-staff-registration can
 // do that, and only within the caller's own authority. Any authenticated
 // user may call this; the whole point is anyone can ASK.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller, AppRole } from "../_shared/auth.ts";
 import { logAudit } from "../_shared/audit.ts";
 import { checkRateLimit } from "../_shared/rateLimit.ts";
@@ -90,7 +90,7 @@ serveWithCors(async (req) => {
       // friendly check above already covers the common case.
       return errorResponse("you already have a pending registration request - wait for it to be reviewed", 409);
     }
-    return errorResponse(insertError.message, 500);
+    return dbErrorResponse("submit-staff-registration", insertError.message);
   }
 
   await logAudit(admin, caller, "staff_registration_submitted", "staff_registration_request", newRequest.id, {

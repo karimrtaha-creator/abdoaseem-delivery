@@ -3,7 +3,7 @@
 // delete, this applies regardless of the target's is_active state (a
 // suspended employee's password still needs resetting before they're
 // reactivated, and an active one may have simply forgotten theirs).
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { logAudit } from "../_shared/audit.ts";
 
@@ -42,7 +42,7 @@ serveWithCors(async (req) => {
     .select("id, role, branch_id, region_id, phone")
     .eq("id", targetId)
     .maybeSingle();
-  if (targetError) return errorResponse(targetError.message, 500);
+  if (targetError) return dbErrorResponse("reset-user-password", targetError.message);
   if (!target) return errorResponse("user not found", 404);
 
   if (caller.role === "regional_manager") {
@@ -69,7 +69,7 @@ serveWithCors(async (req) => {
 
   const newPassword = generatePassword();
   const { error: updateError } = await admin.auth.admin.updateUserById(targetId, { password: newPassword });
-  if (updateError) return errorResponse(updateError.message, 500);
+  if (updateError) return dbErrorResponse("reset-user-password", updateError.message);
 
   // The password itself never goes in metadata - only that a reset happened.
   await logAudit(admin, caller, "password_reset", "user", targetId, {

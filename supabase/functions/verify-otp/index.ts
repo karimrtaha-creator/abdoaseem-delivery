@@ -13,7 +13,7 @@
 // before this fix. Real HTTP error codes are reserved for genuine
 // exceptions: 401 unauthorized, 403 wrong role/not your order, 404 order
 // not found, 409 wrong order status, 500 server error.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { minutesBetween } from "../_shared/sla.ts";
 
@@ -57,7 +57,7 @@ serveWithCors(async (req) => {
     .order("id", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (otpError) return errorResponse(otpError.message, 500);
+  if (otpError) return dbErrorResponse("verify-otp", otpError.message);
   if (!otp) return jsonResponse({ result: "no_active_code" });
 
   if (new Date(otp.expires_at).getTime() < Date.now()) {
@@ -68,10 +68,26 @@ serveWithCors(async (req) => {
   }
 
   if (otp.code !== code) {
-    const attempts = otp.attempts + 1;
-    await admin.from("otp_codes").update({ attempts }).eq("id", otp.id);
+    // Atomic (security audit finding L-01, 0052): a single guarded
+    // UPDATE inside record_otp_wrong_attempt, not a stale read-then-write
+    // - concurrent wrong guesses on the same row serialize on Postgres's
+    // row lock instead of racing, so attempts can neither be lost nor
+    // pushed past MAX_ATTEMPTS.
+    const { data: newAttempts, error: attemptError } = await admin.rpc("record_otp_wrong_attempt", {
+      p_otp_id: otp.id,
+      p_max_attempts: MAX_ATTEMPTS,
+    });
+    if (attemptError) return dbErrorResponse("verify-otp", attemptError.message);
 
-    if (attempts >= MAX_ATTEMPTS) {
+    // null means the guarded UPDATE matched zero rows - a concurrent
+    // request already pushed this row to attempts >= MAX_ATTEMPTS (or
+    // verified it) between our read above and this call. Either way the
+    // safe answer is "locked", never a freshly-computed attempts count.
+    if (newAttempts == null) {
+      return jsonResponse({ result: "locked", attempts_remaining: 0 });
+    }
+
+    if (newAttempts >= MAX_ATTEMPTS) {
       // Not written to complaints: that table has no viewing screen yet
       // anywhere in this project, so a silent DB write nobody can see is
       // worse than a log line a developer can actually go find. Revisit
@@ -83,7 +99,7 @@ serveWithCors(async (req) => {
     }
     // Never echo the submitted code or anything about the real one - only
     // a remaining-attempts count, nothing that narrows down a guess.
-    return jsonResponse({ result: "wrong_code", attempts_remaining: MAX_ATTEMPTS - attempts });
+    return jsonResponse({ result: "wrong_code", attempts_remaining: MAX_ATTEMPTS - newAttempts });
   }
 
   const deliveredTime = new Date();
@@ -99,7 +115,7 @@ serveWithCors(async (req) => {
       is_delayed: isDelayed,
     })
     .eq("id", order_id);
-  if (updateOrderError) return errorResponse(updateOrderError.message, 500);
+  if (updateOrderError) return dbErrorResponse("verify-otp", updateOrderError.message);
 
   await admin.from("otp_codes").update({ verified_at: deliveredTime.toISOString() }).eq("id", otp.id);
 

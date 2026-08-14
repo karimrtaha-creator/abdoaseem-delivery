@@ -3,7 +3,7 @@
 // through a function (rather than a client-side users SELECT policy) so
 // customer PII lookup by phone stays server-side and audited, same as
 // every other sensitive read in this project.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 
 serveWithCors(async (req) => {
@@ -32,7 +32,7 @@ serveWithCors(async (req) => {
     .eq("phone", phone)
     .eq("role", "customer")
     .maybeSingle();
-  if (customerError) return errorResponse(customerError.message, 500);
+  if (customerError) return dbErrorResponse("lookup-customer", customerError.message);
   if (!customer) return jsonResponse({ found: false });
 
   const { data: profile } = await admin

@@ -13,7 +13,7 @@
 //      account deactivated forever. Deactivation already fully and
 //      permanently blocks their access; delete is only for accounts that
 //      never did any real work (e.g. created by mistake).
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { logAudit } from "../_shared/audit.ts";
 
@@ -49,7 +49,7 @@ serveWithCors(async (req) => {
     .select("id, role, branch_id, region_id, is_active, name")
     .eq("id", targetId)
     .maybeSingle();
-  if (targetError) return errorResponse(targetError.message, 500);
+  if (targetError) return dbErrorResponse("delete-user", targetError.message);
   if (!target) return errorResponse("user not found", 404);
 
   if (caller.role === "regional_manager") {
@@ -99,7 +99,7 @@ serveWithCors(async (req) => {
   // Deletes the auth.users row, which cascades to the matching public.users
   // row via the existing id -> auth.users foreign key (ON DELETE CASCADE).
   const { error: deleteError } = await admin.auth.admin.deleteUser(targetId);
-  if (deleteError) return errorResponse(deleteError.message, 500);
+  if (deleteError) return dbErrorResponse("delete-user", deleteError.message);
 
   // Logged after the fact with a name/role snapshot in metadata - the
   // public.users row is already gone by this point (cascade delete), so

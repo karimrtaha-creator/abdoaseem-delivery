@@ -9,7 +9,7 @@
 // Silently skips an order whenever either point is missing (driver
 // hasn't sent a location yet, or the address was never pinned) - there's
 // nothing wrong to report, just nothing to compare yet.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient } from "../_shared/auth.ts";
 import { sendPush } from "../_shared/fcm.ts";
 
@@ -48,7 +48,7 @@ serveWithCors(async (req) => {
     .eq("proximity_alert_sent", false)
     .not("driver_id", "is", null)
     .not("address_id", "is", null);
-  if (ordersError) return errorResponse(ordersError.message, 500);
+  if (ordersError) return dbErrorResponse("check-driver-proximity", ordersError.message);
   if (!orders || orders.length === 0) return jsonResponse({ checked: 0, alerted: 0 });
 
   const driverIds = [...new Set(orders.map((o) => o.driver_id as string))];
@@ -58,8 +58,8 @@ serveWithCors(async (req) => {
     admin.from("users").select("id, current_lat, current_lng").in("id", driverIds),
     admin.from("customer_addresses").select("id, latitude, longitude").in("id", addressIds),
   ]);
-  if (driversRes.error) return errorResponse(driversRes.error.message, 500);
-  if (addressesRes.error) return errorResponse(addressesRes.error.message, 500);
+  if (driversRes.error) return dbErrorResponse("check-driver-proximity", driversRes.error.message);
+  if (addressesRes.error) return dbErrorResponse("check-driver-proximity", addressesRes.error.message);
 
   const driverById = new Map((driversRes.data ?? []).map((d) => [d.id, d]));
   const addressById = new Map((addressesRes.data ?? []).map((a) => [a.id, a]));

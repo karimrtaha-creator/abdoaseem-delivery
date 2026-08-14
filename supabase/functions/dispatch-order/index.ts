@@ -2,7 +2,7 @@
 // prep_time_minutes and sla_minutes, stamps dispatch_time with the
 // function's own clock (server time, never a client-supplied timestamp),
 // generates the delivery OTP, and moves the order to out_for_delivery.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors, isBrowserRequest } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, isBrowserRequest, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { lookupSlaMinutes, minutesBetween, generateOtpCode } from "../_shared/sla.ts";
 import { sendOtpToCustomer } from "../_shared/notify.ts";
@@ -109,7 +109,7 @@ serveWithCors(async (req) => {
       status: "out_for_delivery",
     })
     .eq("id", order_id);
-  if (updateError) return errorResponse(updateError.message, 500);
+  if (updateError) return dbErrorResponse("dispatch-order", updateError.message);
 
   await logAudit(admin, caller, "order_dispatched", "order", order_id, {
     pos_order_id: order.pos_order_id,

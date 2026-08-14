@@ -22,7 +22,7 @@
 //      'ready_for_driver' too long because no dispatcher assigned a
 //      driver yet. Same gap as #2 would otherwise exist here too - the
 //      order is physically ready and photographed, just never handed off.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient } from "../_shared/auth.ts";
 import { alertManagersOrderDelayed } from "../_shared/notify.ts";
 
@@ -69,9 +69,9 @@ serveWithCors(async (req) => {
       .select("id, branch_id, order_photos(photographed_at)")
       .eq("status", "ready_for_driver"),
   ]);
-  if (dispatchedRes.error) return errorResponse(dispatchedRes.error.message, 500);
-  if (preparingRes.error) return errorResponse(preparingRes.error.message, 500);
-  if (readyForDriverRes.error) return errorResponse(readyForDriverRes.error.message, 500);
+  if (dispatchedRes.error) return dbErrorResponse("check-sla-breaches", dispatchedRes.error.message);
+  if (preparingRes.error) return dbErrorResponse("check-sla-breaches", preparingRes.error.message);
+  if (readyForDriverRes.error) return dbErrorResponse("check-sla-breaches", readyForDriverRes.error.message);
 
   const breachedDispatched = (dispatchedRes.data ?? []).filter((o) => {
     const deadline = new Date(o.dispatch_time).getTime() + o.sla_minutes * 60_000;
@@ -102,7 +102,7 @@ serveWithCors(async (req) => {
     .from("orders")
     .update({ status: "delayed" })
     .in("id", breached.map((o) => o.id));
-  if (updateError) return errorResponse(updateError.message, 500);
+  if (updateError) return dbErrorResponse("check-sla-breaches", updateError.message);
 
   await Promise.all(breached.map((o) => alertManagersOrderDelayed(o.id, o.branch_id)));
 

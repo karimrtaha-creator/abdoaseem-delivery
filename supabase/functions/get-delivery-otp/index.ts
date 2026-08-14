@@ -6,8 +6,9 @@
 //     to show it in, so the agent relays it if the customer calls back)
 // Nobody else - specifically not dispatcher or driver, see the removal of
 // otp_code_debug from dispatch-order/resend-otp for why.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
+import { checkRateLimit } from "../_shared/rateLimit.ts";
 
 serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -29,6 +30,17 @@ serveWithCors(async (req) => {
   if (!order_id) return errorResponse("order_id is required");
 
   const admin = getAdminClient();
+
+  // Security audit finding L-02: this had no rate limit at all - 15/15
+  // rapid requests succeeded live. Especially relevant for call_center,
+  // which can look up any guest order's code (not just its own) - a
+  // compromised/malicious agent account could otherwise scan through
+  // many guest orders quickly. 20/60s per caller is generous for a
+  // customer refreshing their own tracking page a few times while
+  // waiting, while capping a scripted scan.
+  const withinLimit = await checkRateLimit(admin, "get-delivery-otp", caller.id, 60, 20);
+  if (!withinLimit) return errorResponse("too many requests - slow down", 429);
+
   const { data: order, error: orderError } = await admin
     .from("orders")
     .select("id, customer_id, status")
@@ -55,7 +67,7 @@ serveWithCors(async (req) => {
     .order("id", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (otpError) return errorResponse(otpError.message, 500);
+  if (otpError) return dbErrorResponse("get-delivery-otp", otpError.message);
   if (!otp) return jsonResponse({ available: false, reason: "no active code" });
 
   const expired = new Date(otp.expires_at).getTime() < Date.now();

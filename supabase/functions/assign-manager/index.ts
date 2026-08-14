@@ -10,7 +10,7 @@
 // to null) until the general_manager manually reassigns or deactivates
 // them separately. Deactivation is deliberately a distinct, explicit
 // action (deactivate-user), never an automatic side effect of this one.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 
 interface AssignBody {
@@ -50,7 +50,7 @@ serveWithCors(async (req) => {
     .select("id, name")
     .eq("id", targetUserId)
     .maybeSingle();
-  if (targetUserError) return errorResponse(targetUserError.message, 500);
+  if (targetUserError) return dbErrorResponse("assign-manager", targetUserError.message);
   if (!targetUser) return errorResponse("user not found", 404);
 
   if (targetType === "branch") {
@@ -67,14 +67,14 @@ serveWithCors(async (req) => {
 
     if (displaced) {
       const { error: displaceError } = await admin.from("users").update({ branch_id: null }).eq("id", displaced.id);
-      if (displaceError) return errorResponse(displaceError.message, 500);
+      if (displaceError) return dbErrorResponse("assign-manager", displaceError.message);
     }
 
     const { error: assignError } = await admin
       .from("users")
       .update({ role: "branch_manager", branch_id: targetId, region_id: null })
       .eq("id", targetUserId);
-    if (assignError) return errorResponse(assignError.message, 500);
+    if (assignError) return dbErrorResponse("assign-manager", assignError.message);
 
     return jsonResponse({
       user_id: targetUserId,
@@ -98,14 +98,14 @@ serveWithCors(async (req) => {
 
   if (displaced) {
     const { error: displaceError } = await admin.from("users").update({ region_id: null }).eq("id", displaced.id);
-    if (displaceError) return errorResponse(displaceError.message, 500);
+    if (displaceError) return dbErrorResponse("assign-manager", displaceError.message);
   }
 
   const { error: assignError } = await admin
     .from("users")
     .update({ role: "regional_manager", region_id: targetId, branch_id: null })
     .eq("id", targetUserId);
-  if (assignError) return errorResponse(assignError.message, 500);
+  if (assignError) return dbErrorResponse("assign-manager", assignError.message);
 
   return jsonResponse({
     user_id: targetUserId,

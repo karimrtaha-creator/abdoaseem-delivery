@@ -2,7 +2,7 @@
 // gate every order (call_center / customer_app) passes through before
 // entering `preparing`. POS orders (Phase 5, auto-accept per section 6
 // note) are out of scope here.
-import { corsHeaders, jsonResponse, errorResponse, serveWithCors } from "../_shared/cors.ts";
+import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { sendPush } from "../_shared/fcm.ts";
 import { checkRateLimit } from "../_shared/rateLimit.ts";
@@ -60,7 +60,7 @@ serveWithCors(async (req) => {
       .from("orders")
       .update({ status: "rejected" })
       .eq("id", order_id);
-    if (updateError) return errorResponse(updateError.message, 500);
+    if (updateError) return dbErrorResponse("accept-order", updateError.message);
     await logAudit(admin, caller, "order_rejected", "order", order_id, { pos_order_id: order.pos_order_id });
     return jsonResponse({ order_id, status: "rejected" });
   }
@@ -82,7 +82,7 @@ serveWithCors(async (req) => {
     })
     .eq("id", order_id);
 
-  if (updateError) return errorResponse(updateError.message, 500);
+  if (updateError) return dbErrorResponse("accept-order", updateError.message);
 
   await logAudit(admin, caller, "order_accepted", "order", order_id, { pos_order_id: order.pos_order_id });
 
