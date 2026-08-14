@@ -20,12 +20,11 @@ interface CartItem {
 // Security audit finding M-02: quantity used to be checked with just
 // `!item.quantity || item.quantity <= 0`, which passed decimals (1.5),
 // non-integers coerced to true-ish, and anything huge - a malformed
-// quantity (1.5, 1e308) got past this check, then failed later at the
-// order_items insert (a real Postgres integer-column error), by which
-// point the parent orders row had already been written with no items
-// (a separate, still-open data-integrity issue - Batch 3). This business
-// maximum (20/line) is a placeholder pending a real number from Karim;
-// easy to change in one place.
+// quantity (1.5, 1e308) got past this check and used to fail later at the
+// order_items insert, orphaning the just-created orders row (closed
+// architecturally by 0056's atomic create_order_with_items - see below).
+// This business maximum (20/line) is a placeholder pending a real number
+// from Karim; easy to change in one place.
 const MAX_ITEM_QUANTITY = 20;
 
 // Cairo-local "HH:MM" for the current instant - the server itself runs in
@@ -223,35 +222,36 @@ async function finishOrder(
     deliveryTimeMinutes = await lookupSlaMinutes(admin, deliveryFee, args.branch_id);
   }
 
-  const { data: order, error: orderError } = await admin
-    .from("orders")
-    .insert({
-      order_source: args.order_source,
-      branch_id: args.branch_id,
-      customer_id: args.customer_id,
-      customer_phone: args.customer_phone,
-      address_id: args.address_id,
-      status: "pending_acceptance",
-      order_time: new Date().toISOString(),
-      payment_method: args.paymentMethod,
-      payment_proof_url: args.paymentProofUrl,
-      delivery_fee_after_tax: deliveryFee,
-      delivery_service: deliveryService,
-      delivery_time_minutes: deliveryTimeMinutes,
-    })
-    .select("id")
-    .single();
-  if (orderError || !order) return errorResponse(orderError?.message ?? "failed to create order", 500);
-
-  const { error: itemsError } = await admin
-    .from("order_items")
-    .insert(orderItemsToInsert.map((i) => ({ ...i, order_id: order.id })));
-  if (itemsError) {
-    return errorResponse(`order created (id=${order.id}) but items failed: ${itemsError.message}`, 500);
+  // Order + its line items are created in one atomic call (0056) - the
+  // order row and every order_items row either all commit together or
+  // none of them do, closing the orphan-order gap two separate inserts
+  // used to leave open when the second one failed.
+  const { data: orderId, error: createError } = await admin.rpc("create_order_with_items", {
+    p_order_source: args.order_source,
+    p_branch_id: args.branch_id,
+    p_customer_id: args.customer_id,
+    p_customer_phone: args.customer_phone,
+    p_address_id: args.address_id,
+    p_payment_method: args.paymentMethod,
+    p_payment_proof_url: args.paymentProofUrl,
+    p_delivery_fee: deliveryFee,
+    p_delivery_service: deliveryService,
+    p_delivery_time_minutes: deliveryTimeMinutes,
+    p_items: orderItemsToInsert.map((i) => ({
+      menu_item_id: i.menu_item_id,
+      combo_offer_id: i.combo_offer_id,
+      quantity: i.quantity,
+      unit_price: i.unit_price,
+      combo_selection: i.combo_selection,
+      note: i.note,
+    })),
+  });
+  if (createError || orderId == null) {
+    return dbErrorResponse("create-order", createError?.message ?? "create_order_with_items returned no id");
   }
 
   return jsonResponse({
-    order_id: order.id,
+    order_id: orderId,
     status: "pending_acceptance",
     items_count: orderItemsToInsert.length,
     redirected_from: args.redirectedFrom ?? null,
