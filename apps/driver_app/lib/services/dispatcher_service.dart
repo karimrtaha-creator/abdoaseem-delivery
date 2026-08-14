@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../supabase_config.dart';
 
 /// Mandatory dispatcher-photo gate (2026-08-11, approved design): mirrors
 /// the error-handling pattern already established in delivery_service.dart
@@ -96,22 +99,36 @@ class DispatcherService {
     return (rows as List<dynamic>).map((r) => ActiveDriver.fromMap(r as Map<String, dynamic>)).toList();
   }
 
-  /// Uploads directly to the `receipts` bucket using this dispatcher's own
-  /// session - storage RLS (receipts_insert_dispatcher, predates this
-  /// feature) already restricts writes to `{their branch_id}/...`, so the
-  /// path here must start with branchId to match it. Stores a PATH, not a
-  /// public URL - same convention already used for payment_proof_url
-  /// elsewhere in this codebase (the bucket is private; a signed URL gets
-  /// generated on demand whenever someone actually needs to view it).
+  /// Uploaded server-side via the upload-receipt edge function (security
+  /// audit finding MEDIUM-2 residual, 2026-08-14) - the old direct-to-
+  /// storage upload trusted whatever Content-Type this file carried; the
+  /// server now checks the actual bytes against real image signatures
+  /// before ever writing. branch_id is no longer a parameter - the server
+  /// derives it from this dispatcher's own profile instead of trusting a
+  /// client-supplied value. Stores a PATH, not a public URL - same
+  /// convention already used for payment_proof_url elsewhere in this
+  /// codebase (the bucket is private; a signed URL gets generated on
+  /// demand whenever someone actually needs to view it).
   Future<String> uploadPhoto({
-    required int branchId,
     required int orderId,
     required File file,
   }) async {
-    final path = '$branchId/$orderId/${DateTime.now().millisecondsSinceEpoch}.jpg';
     try {
-      await _client.storage.from('receipts').upload(path, file, fileOptions: const FileOptions(contentType: 'image/jpeg'));
-      return path;
+      final session = _client.auth.currentSession;
+      if (session == null) throw DispatcherServerException('not signed in');
+      final uri = Uri.parse('${SupabaseConfig.url}/functions/v1/upload-receipt');
+      final request = http.MultipartRequest('POST', uri)
+        ..headers['Authorization'] = 'Bearer ${session.accessToken}'
+        ..headers['apikey'] = SupabaseConfig.anonKey
+        ..fields['order_id'] = orderId.toString()
+        ..files.add(await http.MultipartFile.fromPath('file', file.path));
+      final streamed = await request.send();
+      final response = await http.Response.fromStream(streamed);
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode != 200) {
+        throw DispatcherServerException(body['error']?.toString() ?? 'upload failed');
+      }
+      return body['path'] as String;
     } on SocketException {
       throw NoNetworkException();
     } on TimeoutException {

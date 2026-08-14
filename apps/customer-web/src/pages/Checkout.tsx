@@ -134,18 +134,24 @@ export function Checkout() {
 
     setSubmitting(true);
     try {
-      let paymentProofUrl: string | undefined;
-      if (paymentMethod === "instapay_transfer" && proofFile) {
-        const path = `${session!.user.id}/${Date.now()}.jpg`;
-        const { error: uploadError } = await supabase.storage
-          .from("payment-proofs")
-          .upload(path, proofFile, { contentType: proofFile.type || "image/jpeg" });
-        if (uploadError) throw new Error(`فشل رفع إثبات الدفع: ${uploadError.message}`);
-        paymentProofUrl = path;
-      }
-
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
+
+      let paymentProofUrl: string | undefined;
+      if (paymentMethod === "instapay_transfer" && proofFile) {
+        // Uploaded server-side (upload-payment-proof edge function) - the
+        // server checks the actual file bytes against real image
+        // signatures rather than trusting this File object's declared/
+        // guessed type.
+        const formData = new FormData();
+        formData.append("file", proofFile);
+        const { data: uploadData, error: uploadError } = await supabase.functions.invoke<{ path: string }>(
+          "upload-payment-proof",
+          { body: formData, headers: token ? { Authorization: `Bearer ${token}` } : undefined },
+        );
+        if (uploadError) throw new Error(`فشل رفع إثبات الدفع: ${uploadError.message}`);
+        paymentProofUrl = uploadData!.path;
+      }
       const { data, error: fnError } = await supabase.functions.invoke("create-order", {
         body: {
           address_id: selectedAddressId,

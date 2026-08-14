@@ -301,11 +301,14 @@ export function CallCenter() {
     try {
       let paymentProofUrl: string | undefined;
       if (paymentMethod === "instapay_transfer" && proofFile) {
-        const path = `guest/${phone.trim()}-${Date.now()}.jpg`;
-        const { error: uploadError } = await supabase.storage
-          .from("payment-proofs")
-          .upload(path, proofFile, { contentType: proofFile.type || "image/jpeg" });
-        if (uploadError) throw new Error(`فشل رفع إثبات الدفع: ${uploadError.message}`);
+        // Uploaded server-side (upload-payment-proof edge function) - the
+        // server checks the actual file bytes against real image
+        // signatures rather than trusting this File object's declared/
+        // guessed type.
+        const formData = new FormData();
+        formData.append("file", proofFile);
+        formData.append("phone", phone.trim());
+        const { path } = await callFunction<{ path: string }>("upload-payment-proof", formData);
         paymentProofUrl = path;
       }
 

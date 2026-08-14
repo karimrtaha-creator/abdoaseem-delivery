@@ -195,7 +195,7 @@ class _OrderActionScreenState extends State<_OrderActionScreen> {
         // Website order - already has delivery_service/delivery_time_minutes
         // from create-order, nothing to confirm here. Upload and submit
         // straight away, same as before.
-        final path = await widget.service.uploadPhoto(branchId: widget.branchId, orderId: widget.order.id, file: file);
+        final path = await widget.service.uploadPhoto(orderId: widget.order.id, file: file);
         await widget.service.photographOrder(orderId: widget.order.id, photoPath: path);
         setState(() {
           _photographed = true;
@@ -253,7 +253,6 @@ class _OrderActionScreenState extends State<_OrderActionScreen> {
     });
     try {
       final path = await widget.service.uploadPhoto(
-        branchId: widget.branchId,
         orderId: widget.order.id,
         file: _pendingPhotoFile!,
       );
