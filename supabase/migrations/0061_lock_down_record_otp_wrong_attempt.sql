@@ -1,0 +1,23 @@
+-- Security audit finding NEW-1 (Batch 7, 2026-08-14, discovered during post-remediation
+-- verification of Batches 4-6): record_otp_wrong_attempt (0052) was never given the explicit
+-- REVOKE EXECUTE FROM PUBLIC that check_rate_limit (0050) and create_order_with_items (0058)
+-- already have - 0052's own comment claimed "no grant to anon/authenticated is added", which is
+-- true (no GRANT statement was added), but it overlooked that Postgres grants EXECUTE to PUBLIC
+-- on every newly created function by default unless explicitly revoked. information_schema and a
+-- direct pg_proc/aclexplode check both confirmed it live: PUBLIC:EXECUTE was present.
+--
+-- Live-confirmed exploitable: a bare curl with ONLY the public anon apikey (no Authorization
+-- header, no session, no login at all) successfully called
+-- POST /rest/v1/rpc/record_otp_wrong_attempt with an arbitrary p_otp_id and p_max_attempts=5,
+-- incrementing a real order's otp_codes.attempts from 0 to 5 in 5 calls - fully exhausting that
+-- order's delivery-OTP attempt counter before the real customer ever got a chance to enter their
+-- own code. verify-otp treats attempts >= max_attempts as a hard lock, so this is a real,
+-- unauthenticated denial-of-service against any specific in-progress delivery, reachable simply
+-- by guessing/enumerating small integer otp_id values.
+--
+-- verify-otp (its only legitimate caller, confirmed by inspection) calls this exclusively via its
+-- admin (service_role) client. Fix: revoke EXECUTE from PUBLIC/anon/authenticated, exactly
+-- matching check_rate_limit's and create_order_with_items's posture. service_role keeps EXECUTE
+-- via 0004's blanket grant + default-privileges rule, unaffected by revoking the PUBLIC-inherited
+-- grant - verify-otp is unaffected.
+revoke execute on function public.record_otp_wrong_attempt(bigint, int) from public, anon, authenticated;
