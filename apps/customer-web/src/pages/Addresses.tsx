@@ -87,14 +87,22 @@ export function Addresses() {
   // Zones are scoped to whichever branch is picked - loaded fresh instead
   // of filtering one big upfront fetch, since a branch can carry 100+ of
   // the real 644 zones and most never need to be in memory at once.
+  //
+  // Security audit finding MEDIUM-1 (Batch 6): this reads from
+  // delivery_zones_directory (names/branch only, no delivery_fee) instead
+  // of the base table - a customer session used to be able to bulk-read
+  // every zone's exact price in one call this way. The fee itself is
+  // never shown in this dropdown anyway (see selectedZoneFee below,
+  // fetched one zone at a time only after a pick), so nothing about the
+  // search/select UX changes.
   useEffect(() => {
     if (!form.nearest_branch_id) {
       setZones([]);
       return;
     }
     supabase
-      .from("delivery_zones")
-      .select("id, branch_id, zone_name, delivery_fee")
+      .from("delivery_zones_directory")
+      .select("id, branch_id, zone_name")
       .eq("branch_id", Number(form.nearest_branch_id))
       .eq("is_active", true)
       .order("zone_name")
@@ -108,6 +116,23 @@ export function Addresses() {
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.nearest_branch_id]);
+
+  // The fee for whichever zone is actually selected - fetched one zone at a
+  // time via the get_zone_delivery_fee RPC (the only path left to read a
+  // delivery_fee value as a customer), not from the bulk-fetched zones list.
+  const [selectedZoneFee, setSelectedZoneFee] = useState<number | null>(null);
+  useEffect(() => {
+    if (!form.zone_id) {
+      setSelectedZoneFee(null);
+      return;
+    }
+    supabase
+      .rpc("get_zone_delivery_fee", { p_zone_id: Number(form.zone_id) })
+      .then(({ data }) => {
+        const row = (data as { delivery_fee: number }[] | null)?.[0];
+        setSelectedZoneFee(row?.delivery_fee ?? null);
+      });
+  }, [form.zone_id]);
 
   function openNewForm() {
     setForm(EMPTY_FORM);
@@ -382,9 +407,9 @@ export function Addresses() {
                   ))}
                 </ul>
               )}
-              {selectedZone && (
+              {selectedZone && selectedZoneFee != null && (
                 <p className="muted" style={{ margin: "4px 0 0" }}>
-                  سعر التوصيل من الفرع ده لمنطقتك: {selectedZone.delivery_fee}ج
+                  سعر التوصيل من الفرع ده لمنطقتك: {selectedZoneFee}ج
                 </p>
               )}
               {!selectedZone && zones.length === 0 && (

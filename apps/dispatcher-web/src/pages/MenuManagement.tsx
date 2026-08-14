@@ -150,17 +150,22 @@ export function MenuManagement() {
     setError(null);
     setUploadingId(item.id);
     try {
-      const ext = file.name.split(".").pop() ?? "jpg";
-      const path = `${item.id}.${ext}`;
-      const { error: uploadError } = await supabase.storage.from("menu-images").upload(path, file, {
-        upsert: true,
-        cacheControl: "3600",
+      // Uploaded server-side (upload-image edge function) - the server
+      // checks the actual file bytes against real image signatures rather
+      // than trusting this File object's declared/guessed type, see the
+      // function's own comment for why that distinction matters.
+      const formData = new FormData();
+      formData.append("bucket", "menu-images");
+      formData.append("entity_id", String(item.id));
+      formData.append("file", file);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const { data, error: uploadError } = await supabase.functions.invoke<{ url: string }>("upload-image", {
+        body: formData,
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       if (uploadError) throw new Error(uploadError.message);
-      const { data: publicUrlData } = supabase.storage.from("menu-images").getPublicUrl(path);
-      // cache-bust so the new photo shows immediately instead of the
-      // previous upload's cached response at the same path
-      const url = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+      const url = data!.url;
       const { error: updateError } = await supabase.from("menu_items").update({ image_url: url }).eq("id", item.id);
       if (updateError) throw new Error(updateError.message);
       setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, image_url: url } : i)));

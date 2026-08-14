@@ -1,0 +1,26 @@
+-- Security audit finding MEDIUM-2 (Batch 6, 2026-08-14): storage buckets validate uploaded MIME
+-- type against the client-DECLARED Content-Type header only, never the actual file bytes. This is
+-- a platform behavior of Supabase Storage's bucket-level allowed_mime_types check, not something
+-- fixable via a Postgres migration alone. Live-confirmed in the audit: raw
+-- `<script>alert(document.domain)</script>` bytes uploaded with header `Content-Type: image/png`
+-- were accepted, then served back with that same attacker-declared Content-Type and the raw HTML
+-- body intact.
+--
+-- menu-images and branch-images are PUBLIC buckets - a spoofed file there is reachable by anyone
+-- with the URL, no auth needed at all, so this is where "spoofed content becomes an executable
+-- public resource" is actually possible (the audit's explicit minimum bar). receipts and
+-- payment-proofs are private, RLS-scoped buckets with narrower blast radius and web+Flutter mixed
+-- upload paths - left out of this batch's scope (see the Batch 6 report for why), matching this
+-- project's established discipline of not touching flows outside what was asked.
+--
+-- Real fix (see new upload-image edge function): move menu-images/branch-images uploads server-
+-- side, where the actual file bytes can be inspected against real image magic-byte signatures
+-- before ever reaching storage, using the server-detected type (never the client's claim) as the
+-- Content-Type actually written. This migration is the other half of that: remove the client's
+-- direct write path to these two buckets entirely, so the new edge function (via service_role) is
+-- the only way in - the same "lock down direct client mutation, route through a validating server
+-- path" pattern already used for orders/order_items (0020) and everywhere else in this project.
+-- Reads are unaffected: public buckets serve objects via the public URL endpoint, which never goes
+-- through storage.objects RLS at all.
+drop policy if exists "menu_images_write_general_manager" on storage.objects;
+drop policy if exists "branch_images_write_general_manager" on storage.objects;

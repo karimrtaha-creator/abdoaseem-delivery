@@ -32,11 +32,14 @@ export interface Branch {
   delivery_fee?: number;
 }
 
+// Security audit finding MEDIUM-1 (Batch 6): delivery_fee deliberately isn't
+// part of this browse/search shape anymore - it's fetched one zone at a time
+// via the get_zone_delivery_fee RPC only once a zone is actually selected,
+// never bulk-loaded alongside every zone's name (see Addresses.tsx).
 export interface DeliveryZone {
   id: number;
   branch_id: number;
   zone_name: string;
-  delivery_fee: number;
 }
 
 // The branch that will actually fulfil an address's order - if the

@@ -392,17 +392,15 @@ export function BranchManagement() {
     setError(null);
     setUploadingPhotoId(branch.id);
     try {
-      const ext = file.name.split(".").pop() ?? "jpg";
-      const path = `${branch.id}.${ext}`;
-      const { error: uploadError } = await supabase.storage.from("branch-images").upload(path, file, {
-        upsert: true,
-        cacheControl: "3600",
-      });
-      if (uploadError) throw new Error(uploadError.message);
-      const { data: publicUrlData } = supabase.storage.from("branch-images").getPublicUrl(path);
-      // cache-bust so the new photo shows immediately instead of the
-      // previous upload's cached response at the same path
-      const url = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+      // Uploaded server-side (upload-image edge function) - the server
+      // checks the actual file bytes against real image signatures rather
+      // than trusting this File object's declared/guessed type, see the
+      // function's own comment for why that distinction matters.
+      const formData = new FormData();
+      formData.append("bucket", "branch-images");
+      formData.append("entity_id", String(branch.id));
+      formData.append("file", file);
+      const { url } = await callFunction<{ url: string }>("upload-image", formData);
       const { error: updateError } = await supabase.from("branches").update({ photo_url: url }).eq("id", branch.id);
       if (updateError) throw new Error(updateError.message);
       setBranches((prev) => prev.map((b) => (b.id === branch.id ? { ...b, photo_url: url } : b)));

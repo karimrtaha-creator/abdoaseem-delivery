@@ -63,22 +63,26 @@ export function Checkout() {
       setZoneName(null);
       return;
     }
+    // Security audit finding MEDIUM-1 (Batch 6): reads via the
+    // get_zone_delivery_fee RPC (bounded to exactly this one zone_id)
+    // instead of a direct delivery_zones table read - a customer session
+    // used to be able to bulk-read every zone's price this same table this
+    // way; the RPC closes that off while this single-zone lookup keeps
+    // working exactly as before.
     supabase
-      .from("delivery_zones")
-      .select("delivery_fee, zone_name, is_active")
-      .eq("id", selectedAddress.zone_id)
-      .maybeSingle()
+      .rpc("get_zone_delivery_fee", { p_zone_id: selectedAddress.zone_id })
       .then(({ data }) => {
+        const row = (data as { delivery_fee: number; zone_name: string; is_active: boolean }[] | null)?.[0];
         // A zone can be disabled after an address saved it - create-order
         // treats that the same way (falls back to the branch's flat fee),
         // so this mirrors that instead of showing a retired zone's fee.
-        if (!data || !data.is_active) {
+        if (!row || !row.is_active) {
           setZoneFee(null);
           setZoneName(null);
           return;
         }
-        setZoneFee(data.delivery_fee);
-        setZoneName(data.zone_name);
+        setZoneFee(row.delivery_fee);
+        setZoneName(row.zone_name);
       });
   }, [selectedAddress]);
   // Mirrors create-order's own fallback order (zone fee, then flat branch
