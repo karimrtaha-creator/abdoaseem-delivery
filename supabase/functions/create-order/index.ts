@@ -59,6 +59,7 @@ interface CreateOrderBody {
   items?: CartItem[];
   payment_method?: "cash" | "instapay_transfer";
   payment_proof_url?: string;
+  voucher_code?: string;
 }
 
 // Re-fetches every referenced item/combo's current price server-side,
@@ -84,6 +85,7 @@ async function finishOrder(
     // Never set for call_center (that path's delivery_service comes from
     // the dispatcher's OCR-confirm step at photograph time instead).
     zoneName?: string | null;
+    voucherCode?: string | null;
   },
 ): Promise<Response> {
   const menuItemIds = args.items.filter((i) => i.menu_item_id != null).map((i) => i.menu_item_id as number);
@@ -222,10 +224,14 @@ async function finishOrder(
     deliveryTimeMinutes = await lookupSlaMinutes(admin, deliveryFee, args.branch_id);
   }
 
+  const subtotal = orderItemsToInsert.reduce((sum, i) => sum + i.unit_price * i.quantity, 0);
+
   // Order + its line items are created in one atomic call (0056) - the
   // order row and every order_items row either all commit together or
   // none of them do, closing the orphan-order gap two separate inserts
-  // used to leave open when the second one failed.
+  // used to leave open when the second one failed. Voucher validation and
+  // redemption (0064) happen inside this same call, on the server-
+  // recomputed subtotal above, never a client-supplied discount amount.
   const { data: orderId, error: createError } = await admin.rpc("create_order_with_items", {
     p_order_source: args.order_source,
     p_branch_id: args.branch_id,
@@ -245,10 +251,19 @@ async function finishOrder(
       combo_selection: i.combo_selection,
       note: i.note,
     })),
+    p_voucher_code: args.voucherCode ?? null,
+    p_subtotal: subtotal,
   });
   if (createError || orderId == null) {
+    // P0001 = a plain `raise exception` inside create_order_with_items -
+    // currently only ever a voucher-validation failure (bad/expired/
+    // exhausted code), a real client-facing 422, not a server fault.
+    // Anything else is a genuine DB error.
+    if (createError?.code === "P0001") return errorResponse(createError.message, 422);
     return dbErrorResponse("create-order", createError?.message ?? "create_order_with_items returned no id");
   }
+
+  const { data: createdOrder } = await admin.from("orders").select("discount_amount").eq("id", orderId).single();
 
   return jsonResponse({
     order_id: orderId,
@@ -257,6 +272,7 @@ async function finishOrder(
     redirected_from: args.redirectedFrom ?? null,
     serving_branch_name: args.servingBranchName ?? null,
     delivery_fee: deliveryFee,
+    discount_amount: createdOrder?.discount_amount ?? 0,
   });
 }
 
@@ -406,6 +422,7 @@ serveWithCors(async (req) => {
       servingBranchName: servingBranch.name,
       deliveryFeeOverride: zoneDeliveryFee,
       zoneName,
+      voucherCode: body.voucher_code ?? null,
     });
   }
 
@@ -505,5 +522,6 @@ serveWithCors(async (req) => {
     items,
     paymentMethod,
     paymentProofUrl: body.payment_proof_url ?? null,
+    voucherCode: body.voucher_code ?? null,
   });
 });

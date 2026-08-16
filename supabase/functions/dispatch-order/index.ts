@@ -1,16 +1,14 @@
 // Section 4 / 6: the dispatcher's "تأكيد الخروج" action. Computes
 // prep_time_minutes and sla_minutes, stamps dispatch_time with the
 // function's own clock (server time, never a client-supplied timestamp),
-// generates the delivery OTP, and moves the order to out_for_delivery.
+// and moves the order to out_for_delivery. Delivery is later confirmed
+// directly by the driver via confirm-delivery, no OTP exchange.
 import { corsHeaders, jsonResponse, errorResponse, serveWithCors, isBrowserRequest, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
-import { lookupSlaMinutes, minutesBetween, generateOtpCode } from "../_shared/sla.ts";
-import { sendOtpToCustomer } from "../_shared/notify.ts";
+import { lookupSlaMinutes, minutesBetween } from "../_shared/sla.ts";
 import { sendPush } from "../_shared/fcm.ts";
 import { checkRateLimit } from "../_shared/rateLimit.ts";
 import { logAudit } from "../_shared/audit.ts";
-
-const OTP_VALIDITY_MINUTES = 20;
 
 serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -51,7 +49,7 @@ serveWithCors(async (req) => {
 
   const { data: order, error: orderError } = await admin
     .from("orders")
-    .select("id, pos_order_id, branch_id, status, dispatch_time, accepted_at, customer_phone, customer_id")
+    .select("id, pos_order_id, branch_id, status, dispatch_time, accepted_at, customer_id")
     .eq("id", order_id)
     .single();
   if (orderError || !order) return errorResponse("order not found", 404);
@@ -129,15 +127,6 @@ serveWithCors(async (req) => {
     driver_id,
   });
 
-  const code = generateOtpCode();
-  const expiresAt = new Date(dispatchTime.getTime() + OTP_VALIDITY_MINUTES * 60_000);
-  const { error: otpError } = await admin
-    .from("otp_codes")
-    .insert({ order_id, code, expires_at: expiresAt.toISOString() });
-  if (otpError) return errorResponse(`order dispatched but OTP creation failed: ${otpError.message}`, 500);
-
-  const sendResult = await sendOtpToCustomer(order.customer_phone, code, order_id);
-
   if (driver.fcm_token) {
     await sendPush(
       driver.fcm_token,
@@ -159,17 +148,11 @@ serveWithCors(async (req) => {
     );
   }
 
-  // The dispatcher has no legitimate reason to see the delivery code - it
-  // exists to verify the driver actually reached the customer, so it never
-  // appears in this response or in apps/dispatcher-web under any
-  // circumstance. To view it, use get-delivery-otp from the customer's own
-  // order-tracking screen, or from the call_center screen for guest orders.
   return jsonResponse({
     order_id,
     status: "out_for_delivery",
     dispatch_time: dispatchTime.toISOString(),
     prep_time_minutes: prepTimeMinutes,
     sla_minutes: slaMinutes,
-    otp_channel: sendResult.channel,
   });
 });

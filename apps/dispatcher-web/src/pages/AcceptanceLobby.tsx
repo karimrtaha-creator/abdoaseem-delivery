@@ -279,12 +279,27 @@ export function AcceptanceLobby() {
             <span className="stat-label">إجمالي الأوردرات المقبولة النهاردة</span>
           </div>
         </div>
-        <div className="status-pill-row">
-          {branches.map((b) => (
-            <span key={b.id} className="status-pill">
-              {b.name}: {acceptedTodayByBranch.get(b.id) ?? 0}
-            </span>
-          ))}
+        <div className="data-table-wrap" style={{ marginTop: "var(--space-3)" }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>الفرع</th>
+                <th>المقبولة النهاردة</th>
+              </tr>
+            </thead>
+            <tbody>
+              {branches.map((b) => (
+                <tr key={b.id}>
+                  <td>{b.name}</td>
+                  <td className="num-cell">{acceptedTodayByBranch.get(b.id) ?? 0}</td>
+                </tr>
+              ))}
+              <tr style={{ fontWeight: 700 }}>
+                <td>الإجمالي</td>
+                <td className="num-cell">{totalAcceptedToday}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 

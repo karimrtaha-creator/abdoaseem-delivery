@@ -21,6 +21,7 @@ interface MenuItem {
 interface ComboOffer {
   id: number;
   name: string;
+  description: string | null;
   price: number;
   is_active: boolean;
 }
@@ -72,6 +73,12 @@ export function MenuManagement() {
   const [newDescription, setNewDescription] = useState("");
   const [creating, setCreating] = useState(false);
 
+  const [newComboOpen, setNewComboOpen] = useState(false);
+  const [newComboName, setNewComboName] = useState("");
+  const [newComboDescription, setNewComboDescription] = useState("");
+  const [newComboPrice, setNewComboPrice] = useState("");
+  const [creatingCombo, setCreatingCombo] = useState(false);
+
   async function load() {
     const [categoriesRes, itemsRes, combosRes, comboSectionRes, choiceGroupsRes] = await Promise.all([
       supabase.from("menu_categories").select("id, name, display_order").order("display_order"),
@@ -80,7 +87,7 @@ export function MenuManagement() {
         .select("id, category_id, name, price, is_available, image_url, description, display_order")
         .order("display_order")
         .order("id"),
-      supabase.from("combo_offers").select("id, name, price, is_active").order("id"),
+      supabase.from("combo_offers").select("id, name, description, price, is_active").order("id"),
       supabase.from("combo_section_settings").select("label").eq("id", 1).maybeSingle(),
       supabase
         .from("combo_choice_groups")
@@ -382,6 +389,36 @@ export function MenuManagement() {
     load();
   }
 
+  // A combo created here has no choice_groups rows (those are added
+  // separately, there's no UI for that yet) - create-order already treats
+  // zero choice groups as valid (only validates "exactly one option per
+  // group" when groups.length > 0), so a plain combo with just a
+  // name/description/price works correctly end to end, same as the
+  // existing 3 combo offers did before this screen could edit them at all.
+  async function handleCreateCombo(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!newComboName.trim()) return setError("اسم العرض مطلوب");
+    const price = Number(newComboPrice);
+    if (!newComboPrice || Number.isNaN(price) || price <= 0) return setError("سعر العرض لازم يكون رقم صحيح أكبر من صفر");
+
+    setCreatingCombo(true);
+    const { error: insertError } = await supabase.from("combo_offers").insert({
+      name: newComboName.trim(),
+      description: newComboDescription.trim() || null,
+      price,
+      is_active: true,
+    });
+    setCreatingCombo(false);
+    if (insertError) return setError(insertError.message);
+
+    setNewComboName("");
+    setNewComboDescription("");
+    setNewComboPrice("");
+    setNewComboOpen(false);
+    load();
+  }
+
   if (loading) return <p className="muted">جاري التحميل...</p>;
 
   return (
@@ -594,6 +631,43 @@ export function MenuManagement() {
           عايز. "حذف نهائي" مختلف: مفيش رجوع منه، استخدمه بس لما تتأكد إنك مش هتحتاج الكومبو ده تاني. الإقفال
           المؤقت حسب فرع معين لوحده موجود في شاشة "إقفال الأصناف".
         </p>
+
+        {!newComboOpen ? (
+          <button className="btn-primary" onClick={() => setNewComboOpen(true)}>
+            + إضافة عرض جديد
+          </button>
+        ) : (
+          <form onSubmit={handleCreateCombo} style={{ marginBottom: "var(--space-3)" }}>
+            <h3 style={{ marginBottom: 8 }}>عرض جديد</h3>
+            <div className="inline-row">
+              <input placeholder="اسم العرض" value={newComboName} onChange={(e) => setNewComboName(e.target.value)} />
+              <input
+                placeholder="السعر"
+                type="number"
+                min="0"
+                step="0.01"
+                value={newComboPrice}
+                onChange={(e) => setNewComboPrice(e.target.value)}
+              />
+            </div>
+            <textarea
+              placeholder="شرح العرض (اختياري)"
+              value={newComboDescription}
+              onChange={(e) => setNewComboDescription(e.target.value)}
+              rows={2}
+              style={{ width: "100%", marginTop: "8px" }}
+            />
+            <div className="inline-row" style={{ marginTop: "8px" }}>
+              <button className="btn-primary" type="submit" disabled={creatingCombo}>
+                {creatingCombo ? "جاري الإضافة..." : "إضافة"}
+              </button>
+              <button type="button" className="btn-link" onClick={() => setNewComboOpen(false)}>
+                إلغاء
+              </button>
+            </div>
+          </form>
+        )}
+
         {combos.length === 0 && <p className="muted">مفيش كومبوهات دلوقتي.</p>}
         {combos.length > 0 && (
           <div className="order-list">

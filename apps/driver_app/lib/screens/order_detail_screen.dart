@@ -4,7 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/driver_order.dart';
 import '../services/orders_service.dart';
 import 'location_map_screen.dart';
-import 'otp_confirm_screen.dart';
+import 'confirm_delivery_screen.dart';
 
 class OrderDetailScreen extends StatefulWidget {
   final int orderId;
@@ -138,10 +138,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               height: 56,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E6B52)),
-                icon: const Icon(Icons.password, color: Colors.white),
-                label: const Text('تأكيد التسليم بكود OTP', style: TextStyle(fontSize: 17, color: Colors.white)),
+                icon: const Icon(Icons.check_circle, color: Colors.white),
+                label: const Text('تأكيد التسليم', style: TextStyle(fontSize: 17, color: Colors.white)),
                 onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => OtpConfirmScreen(order: order)),
+                  MaterialPageRoute(builder: (_) => ConfirmDeliveryScreen(order: order)),
                 ),
               ),
             ),

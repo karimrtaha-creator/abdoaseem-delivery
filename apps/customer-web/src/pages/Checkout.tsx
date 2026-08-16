@@ -14,6 +14,10 @@ const SERVER_ERROR_TRANSLATIONS: Record<string, string> = {
   "address not found": "العنوان ده مش موجود - جرب تختار عنوان تاني",
   "this address does not belong to you": "حصل خطأ في العنوان - جرب تسجل خروج ودخول تاني",
   "items must be a non-empty array": "سلتك فاضية",
+  "voucher code not found": "كود الخصم ده مش موجود",
+  "voucher code is not active": "كود الخصم ده مش شغال دلوقتي",
+  "voucher code has expired": "كود الخصم ده منتهي الصلاحية",
+  "voucher code has no uses remaining": "كود الخصم ده خلص استخدامه",
 };
 
 function formatHour(time: string): string {
@@ -46,6 +50,10 @@ export function Checkout() {
   const [successOrderId, setSuccessOrderId] = useState<number | null>(null);
   const [redirectNotice, setRedirectNotice] = useState<{ from: string; to: string } | null>(null);
   const [hoursNote, setHoursNote] = useState<string | null>(null);
+  const [voucherCode, setVoucherCode] = useState("");
+  const [voucherState, setVoucherState] = useState<
+    { checking: false; result: { valid: boolean; discount_amount: number; reason: string | null } | null } | { checking: true; result: null }
+  >({ checking: false, result: null });
 
   const selectedAddress = useMemo(
     () => addresses.find((a) => a.id === selectedAddressId) ?? null,
@@ -88,6 +96,36 @@ export function Checkout() {
   // Mirrors create-order's own fallback order (zone fee, then flat branch
   // fee) so what the customer sees here matches what actually gets charged.
   const deliveryFee = zoneFee ?? servingBranch?.delivery_fee ?? 0;
+
+  // Read-only preview via check_voucher (0064) - never redeems the code,
+  // so it's safe to re-run on every keystroke/cart change. The real
+  // redemption + atomic used_count increment only ever happens server-side
+  // inside create-order at actual submit time, on its own recomputed
+  // subtotal - this preview is purely so the customer sees the discount
+  // before confirming, never something create-order trusts as input.
+  useEffect(() => {
+    const trimmed = voucherCode.trim();
+    if (!trimmed) {
+      setVoucherState({ checking: false, result: null });
+      return;
+    }
+    setVoucherState({ checking: true, result: null });
+    const timer = setTimeout(() => {
+      supabase
+        .rpc("check_voucher", { p_code: trimmed, p_subtotal: cart.total })
+        .then(({ data, error }) => {
+          const row = (data as { valid: boolean; discount_amount: number; reason: string | null }[] | null)?.[0];
+          setVoucherState({
+            checking: false,
+            result: error || !row ? { valid: false, discount_amount: 0, reason: "حصل خطأ وإحنا بنتأكد من الكود" } : row,
+          });
+        });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [voucherCode, cart.total]);
+
+  const discountAmount = voucherState.result?.valid ? voucherState.result.discount_amount : 0;
+  const orderTotal = Math.max(0, cart.total + deliveryFee - discountAmount);
 
   useEffect(() => {
     if (!authLoading && !session) navigate("/login");
@@ -164,6 +202,7 @@ export function Checkout() {
           })),
           payment_method: paymentMethod,
           payment_proof_url: paymentProofUrl,
+          voucher_code: voucherState.result?.valid ? voucherCode.trim() : undefined,
         },
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
@@ -308,9 +347,35 @@ export function Checkout() {
           <span>رسوم التوصيل</span>
           <span>{deliveryFee} ج</span>
         </div>
+
+        <div className="field" style={{ marginTop: "var(--space-2)" }}>
+          <label htmlFor="voucher-code">كود خصم (اختياري)</label>
+          <input
+            id="voucher-code"
+            value={voucherCode}
+            onChange={(e) => setVoucherCode(e.target.value)}
+            placeholder="اكتب الكود لو عندك"
+          />
+          {voucherState.checking && <span className="muted">بيتم التأكد من الكود...</span>}
+          {!voucherState.checking && voucherState.result && !voucherState.result.valid && (
+            <span className="error-text">{voucherState.result.reason}</span>
+          )}
+          {!voucherState.checking && voucherState.result?.valid && (
+            <span className="muted" style={{ color: "var(--color-primary)" }}>
+              الكود اشتغل! خصم {voucherState.result.discount_amount} ج
+            </span>
+          )}
+        </div>
+
+        {discountAmount > 0 && (
+          <div className="checkout-line">
+            <span>خصم الكود</span>
+            <span>- {discountAmount} ج</span>
+          </div>
+        )}
         <div className="checkout-line checkout-total">
           <strong>الإجمالي</strong>
-          <strong>{cart.total + deliveryFee} ج</strong>
+          <strong>{orderTotal} ج</strong>
         </div>
       </div>
 
@@ -384,7 +449,7 @@ export function Checkout() {
       {error && <p className="error-text" style={{ marginTop: "var(--space-3)" }}>{error}</p>}
 
       <button className="btn btn-primary btn-lg" style={{ width: "100%", marginTop: "var(--space-4)" }} onClick={submitOrder} disabled={submitting}>
-        {submitting ? "جاري الإرسال..." : `تأكيد الطلب - ${cart.total + deliveryFee} ج`}
+        {submitting ? "جاري الإرسال..." : `تأكيد الطلب - ${orderTotal} ج`}
       </button>
     </div>
   );

@@ -167,7 +167,6 @@ function OrderCard({
   );
   const isTerminalIssue = order.status === "cancelled" || order.status === "rejected";
   const currentStepIndex = ORDER_STATUS_STEPS.indexOf(order.status);
-  const showOtp = order.status === "out_for_delivery" || order.status === "delayed";
   const canCancel = order.status === "pending_acceptance";
 
   return (
@@ -201,8 +200,6 @@ function OrderCard({
         </p>
       )}
       {order.status === "delayed" && <p className="error-text">الطلب متأخر شوية عن المتوقع، هيوصلك في أقرب وقت</p>}
-
-      {showOtp && <DeliveryOtp orderId={order.id} />}
 
       <div className="order-items-list">
         {order.order_items.map((line) => (
@@ -336,49 +333,6 @@ function RateOrder({ orderId, alreadyRated, onRated }: { orderId: number; alread
       <button className="btn btn-primary" onClick={submit} disabled={submitting}>
         {submitting ? "جاري الإرسال..." : "إرسال التقييم"}
       </button>
-    </div>
-  );
-}
-
-function DeliveryOtp({ orderId }: { orderId: number }) {
-  const [state, setState] = useState<{ available: boolean; code?: string } | "loading" | "error">("loading");
-
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchOtp() {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      const { data, error } = await supabase.functions.invoke("get-delivery-otp", {
-        body: { order_id: orderId },
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (cancelled) return;
-      if (error) {
-        setState("error");
-        return;
-      }
-      setState(data as { available: boolean; code?: string });
-    }
-    fetchOtp();
-    // Re-check every 20s - a fresh code can be issued if the driver's
-    // resend-otp path was used, and this card has no realtime channel of
-    // its own on otp_codes (that table is intentionally invisible to
-    // every client role, including this one - only the edge function can
-    // read it).
-    const interval = setInterval(fetchOtp, 20000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [orderId]);
-
-  if (state === "loading") return null;
-  if (state === "error" || !state.available || !state.code) return null;
-
-  return (
-    <div className="delivery-otp">
-      <p className="muted">قول الكود ده للسائق وقت الاستلام</p>
-      <span className="delivery-otp-code">{state.code}</span>
     </div>
   );
 }

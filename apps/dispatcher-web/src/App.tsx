@@ -16,6 +16,7 @@ import { MenuManagement } from "./pages/MenuManagement";
 import { MenuAvailability } from "./pages/MenuAvailability";
 import { BusinessHours } from "./pages/BusinessHours";
 import { DriverLocations } from "./pages/DriverLocations";
+import { VoucherManagement } from "./pages/VoucherManagement";
 
 type TabKey =
   | "call_center"
@@ -29,7 +30,8 @@ type TabKey =
   | "menu_availability"
   | "business_hours"
   | "driver_map"
-  | "staff_requests";
+  | "staff_requests"
+  | "vouchers";
 
 const ROLE_TITLES: Record<string, string> = {
   dispatcher: "ديسباتشر",
@@ -81,6 +83,7 @@ const TABS_BY_ROLE: Record<string, { key: TabKey; label: string }[]> = {
     { key: "menu_photos", label: "المنيو" },
     { key: "menu_availability", label: "إقفال الأصناف" },
     { key: "business_hours", label: "مواعيد العمل" },
+    { key: "vouchers", label: "أكواد الخصم" },
   ],
   regional_manager: [
     { key: "dashboard", label: "لوحة المتابعة" },
@@ -126,6 +129,8 @@ function ScreenFor({ tab, profile }: { tab: TabKey; profile: Profile }) {
       return <DriverLocations profile={profile} />;
     case "staff_requests":
       return <PendingApprovals profile={profile} />;
+    case "vouchers":
+      return <VoucherManagement profile={profile} />;
   }
 }
 
@@ -142,6 +147,7 @@ const TAB_TITLES: Record<TabKey, string> = {
   business_hours: "مواعيد العمل",
   driver_map: "مواقع الطيارين",
   staff_requests: "طلبات التسجيل",
+  vouchers: "أكواد الخصم",
 };
 
 export default function App() {

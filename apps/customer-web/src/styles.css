@@ -420,7 +420,6 @@ button, input, select { font-family: var(--font-body); }
 .photo-card-body h3 { font-size: 1.05rem; }
 .photo-card-hint { font-size: 0.8rem; }
 .photo-card-desc { font-size: 0.85rem; line-height: 1.4; }
-.upsell-suggestion { font-size: 0.8rem; color: var(--color-parsley); margin-top: var(--space-1); }
 
 .combo-choice-group { margin-top: var(--space-2); }
 .combo-choice-label { font-size: 0.85rem; font-weight: 700; color: var(--color-lentil); margin-bottom: 4px; }

@@ -49,15 +49,6 @@ interface ExtraApplicability {
   applies_to_item_id: number;
 }
 
-// Upsell suggestions shown under specific base items - a suggestion, not a
-// restriction (that's a separate mechanism, menu_item_extra_applicability).
-// Keyed by base item name since ids are stable but names read clearer here
-// and this table is tiny/hand-authored either way.
-const UPSELL_SUGGESTIONS: Record<string, string[]> = {
-  "طاجن فراخ": ["إضافة فراخ", "طاجن فراخ موتزريلا"],
-  "طاجن لحم": ["إضافة لحمة", "طاجن لحمة موتزريلا"],
-};
-
 export function Menu() {
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -165,7 +156,6 @@ export function Menu() {
     return map;
   }, [items]);
 
-  const itemsByName = useMemo(() => new Map(items.map((i) => [i.name, i])), [items]);
 
   // Talabat-style tab bar: one tab per non-empty section (combos + each
   // category that actually has items), selecting a tab shows only that
@@ -388,7 +378,6 @@ export function Menu() {
                   const isClosed = nearestBranch !== null && closedAtMyBranch.has(item.id);
                   const restriction = restrictionsByExtra.get(item.id);
                   const isRestricted = restriction !== undefined && ![...restriction].some((id) => cartHasBaseItem.has(id));
-                  const suggestionNames = UPSELL_SUGGESTIONS[item.name];
                   return (
                     <div key={item.id} className="photo-card">
                       {item.image_url ? (
@@ -407,16 +396,6 @@ export function Menu() {
                             {qty > 0 ? `أضف كمان (${qty})` : "أضف للسلة"}
                           </button>
                         </div>
-                        {suggestionNames && (
-                          <p className="upsell-suggestion">
-                            كمان يعجبك:{" "}
-                            {suggestionNames
-                              .map((n) => itemsByName.get(n))
-                              .filter((i): i is MenuItem => !!i)
-                              .map((i) => i.name)
-                              .join(" أو ")}
-                          </p>
-                        )}
                       </div>
                     </div>
                   );

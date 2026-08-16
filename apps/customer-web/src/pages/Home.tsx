@@ -19,16 +19,13 @@ const CATEGORY_BLURBS: Record<string, string> = {
   اضافات: "زود وجبتك بإضافات على مزاجك",
 };
 
-// Canonical permalink, not the /share/v/ shortlink Karim sent - the share
-// shortlink doesn't resolve through Facebook's video plugin (confirmed
-// live: it renders "Video unavailable" instead of the video), the
-// permalink does.
-const PROMO_VIDEO_URL = "https://www.facebook.com/Koshryelghobashy/videos/816767713756781/";
 const FACEBOOK_PAGE_URL = "https://www.facebook.com/share/1cjTyg58CM/?mibextid=wwXIfr";
 const INSTAGRAM_URL = "https://www.instagram.com/koshry_el_ghobashy?igsh=MW82ZWlseTI0NWtn";
 
 export function Home() {
   const [categories, setCategories] = useState<MenuCategory[]>([]);
+  const [promoVideoUrl, setPromoVideoUrl] = useState<string | null>(null);
+  const [promoVideoHeading, setPromoVideoHeading] = useState("شوفنا وإحنا بنطبخ");
   const navigate = useNavigate();
   const cart = useCart();
   const { profile, signOut } = useAuth();
@@ -39,6 +36,19 @@ export function Home() {
       .select("id, name, display_order")
       .order("display_order")
       .then(({ data }) => setCategories((data as MenuCategory[]) ?? []));
+    // Staff-editable from the Staff Portal (Business Hours screen) - see
+    // migration 0063. Section is skipped entirely when unset, so removing
+    // the link is enough to take the video down, no code change needed.
+    supabase
+      .from("site_settings")
+      .select("promo_video_url, promo_video_heading")
+      .eq("id", 1)
+      .maybeSingle()
+      .then(({ data }) => {
+        const row = data as { promo_video_url: string | null; promo_video_heading: string } | null;
+        setPromoVideoUrl(row?.promo_video_url ?? null);
+        if (row?.promo_video_heading) setPromoVideoHeading(row.promo_video_heading);
+      });
   }, []);
 
   return (
@@ -86,19 +96,21 @@ export function Home() {
           </div>
         </section>
 
-        <section className="section" style={{ paddingBlock: "var(--space-4)" }}>
-          <h2 className="section-title">شوفنا وإحنا بنطبخ</h2>
-          <div className="promo-video-wrap">
-            <iframe
-              className="promo-video"
-              src={`https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(PROMO_VIDEO_URL)}&show_text=false`}
-              style={{ border: "none", overflow: "hidden" }}
-              allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
-              allowFullScreen
-              title="فيديو كشري الغباشي"
-            />
-          </div>
-        </section>
+        {promoVideoUrl && (
+          <section className="section" style={{ paddingBlock: "var(--space-4)" }}>
+            <h2 className="section-title">{promoVideoHeading}</h2>
+            <div className="promo-video-wrap">
+              <iframe
+                className="promo-video"
+                src={`https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(promoVideoUrl)}&show_text=false`}
+                style={{ border: "none", overflow: "hidden" }}
+                allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+                allowFullScreen
+                title="فيديو كشري الغباشي"
+              />
+            </div>
+          </section>
+        )}
 
         <section className="section">
           <h2 className="section-title">المنيو</h2>

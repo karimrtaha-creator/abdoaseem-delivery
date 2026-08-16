@@ -54,23 +54,3 @@ export function minutesBetween(from: string | Date, to: string | Date): number {
   const toMs = new Date(to).getTime();
   return Math.round((toMs - fromMs) / 60000);
 }
-
-// 6 real random digits, not all-identical and not a simple ascending/
-// descending run (weak codes like 000000 / 123456 / 654321).
-export function generateOtpCode(): string {
-  const isWeak = (code: string) => {
-    if (/^(\d)\1{5}$/.test(code)) return true;
-    const digits = code.split("").map(Number);
-    const ascending = digits.every((d, i) => i === 0 || d === digits[i - 1] + 1);
-    const descending = digits.every((d, i) => i === 0 || d === digits[i - 1] - 1);
-    return ascending || descending;
-  };
-
-  let code: string;
-  do {
-    const bytes = new Uint32Array(1);
-    crypto.getRandomValues(bytes);
-    code = String(bytes[0] % 1_000_000).padStart(6, "0");
-  } while (isWeak(code));
-  return code;
-}
