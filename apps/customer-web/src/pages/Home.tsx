@@ -22,9 +22,17 @@ const CATEGORY_BLURBS: Record<string, string> = {
 const FACEBOOK_PAGE_URL = "https://www.facebook.com/share/1cjTyg58CM/?mibextid=wwXIfr";
 const INSTAGRAM_URL = "https://www.instagram.com/koshry_el_ghobashy?igsh=MW82ZWlseTI0NWtn";
 
+// Uploaded video files (promo-videos storage bucket) get played natively;
+// anything else (Facebook share/watch links) goes through FB's embed
+// plugin, which is the only reliable way to play a Facebook-hosted video
+// outside facebook.com itself.
+function isUploadedVideoFile(url: string): boolean {
+  return /\.(mp4|webm|mov)(\?|$)/i.test(url);
+}
+
 export function Home() {
   const [categories, setCategories] = useState<MenuCategory[]>([]);
-  const [promoVideoUrl, setPromoVideoUrl] = useState<string | null>(null);
+  const [promoVideos, setPromoVideos] = useState<{ id: number; video_url: string }[]>([]);
   const [promoVideoHeading, setPromoVideoHeading] = useState("شوفنا وإحنا بنطبخ");
   const navigate = useNavigate();
   const cart = useCart();
@@ -37,16 +45,21 @@ export function Home() {
       .order("display_order")
       .then(({ data }) => setCategories((data as MenuCategory[]) ?? []));
     // Staff-editable from the Staff Portal (Business Hours screen) - see
-    // migration 0063. Section is skipped entirely when unset, so removing
-    // the link is enough to take the video down, no code change needed.
+    // migrations 0063/0067. Section is skipped entirely when the list is
+    // empty, so removing every link is enough to take it down, no code
+    // change needed.
+    supabase
+      .from("promo_videos")
+      .select("id, video_url")
+      .order("created_at")
+      .then(({ data }) => setPromoVideos((data as { id: number; video_url: string }[]) ?? []));
     supabase
       .from("site_settings")
-      .select("promo_video_url, promo_video_heading")
+      .select("promo_video_heading")
       .eq("id", 1)
       .maybeSingle()
       .then(({ data }) => {
-        const row = data as { promo_video_url: string | null; promo_video_heading: string } | null;
-        setPromoVideoUrl(row?.promo_video_url ?? null);
+        const row = data as { promo_video_heading: string } | null;
         if (row?.promo_video_heading) setPromoVideoHeading(row.promo_video_heading);
       });
   }, []);
@@ -96,18 +109,28 @@ export function Home() {
           </div>
         </section>
 
-        {promoVideoUrl && (
+        {promoVideos.length > 0 && (
           <section className="section" style={{ paddingBlock: "var(--space-4)" }}>
             <h2 className="section-title">{promoVideoHeading}</h2>
-            <div className="promo-video-wrap">
-              <iframe
-                className="promo-video"
-                src={`https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(promoVideoUrl)}&show_text=false`}
-                style={{ border: "none", overflow: "hidden" }}
-                allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
-                allowFullScreen
-                title="فيديو كشري الغباشي"
-              />
+            <div className="promo-video-list">
+              {promoVideos.map((v) =>
+                isUploadedVideoFile(v.video_url) ? (
+                  <div className="promo-video-wrap" key={v.id}>
+                    <video className="promo-video" src={v.video_url} controls playsInline />
+                  </div>
+                ) : (
+                  <div className="promo-video-wrap" key={v.id}>
+                    <iframe
+                      className="promo-video"
+                      src={`https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(v.video_url)}&show_text=false`}
+                      style={{ border: "none", overflow: "hidden" }}
+                      allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+                      allowFullScreen
+                      title="فيديو كشري الغباشي"
+                    />
+                  </div>
+                ),
+              )}
             </div>
           </section>
         )}

@@ -53,6 +53,8 @@ export function MenuManagement() {
   const [movingId, setMovingId] = useState<number | null>(null);
   const [movingCategoryId, setMovingCategoryId] = useState<number | null>(null);
   const [deletingCategoryId, setDeletingCategoryId] = useState<number | null>(null);
+  const [categoryNameDrafts, setCategoryNameDrafts] = useState<Record<number, string>>({});
+  const [savingCategoryNameId, setSavingCategoryNameId] = useState<number | null>(null);
 
   const [descriptionDrafts, setDescriptionDrafts] = useState<Record<number, string>>({});
   const [savingDescriptionId, setSavingDescriptionId] = useState<number | null>(null);
@@ -260,6 +262,18 @@ export function MenuManagement() {
     setDeletingCategoryId(null);
     if (deleteError) return setError(deleteError.message);
     setCategories((prev) => prev.filter((c) => c.id !== category.id));
+  }
+
+  async function renameCategory(category: MenuCategory) {
+    setError(null);
+    const newName = (categoryNameDrafts[category.id] ?? category.name).trim();
+    if (!newName) return setError("اسم القسم مينفعش يبقى فاضي");
+    if (newName === category.name) return;
+    setSavingCategoryNameId(category.id);
+    const { error: updateError } = await supabase.from("menu_categories").update({ name: newName }).eq("id", category.id);
+    setSavingCategoryNameId(null);
+    if (updateError) return setError(updateError.message);
+    setCategories((prev) => prev.map((c) => (c.id === category.id ? { ...c, name: newName } : c)));
   }
 
   async function savePrice(item: MenuItem) {
@@ -496,7 +510,23 @@ export function MenuManagement() {
               <span className="muted reorder-controls-hint">ترتيب القسم</span>
             </div>
             <div className="pending-order-header">
-              <h2 style={{ margin: 0 }}>{category.name}</h2>
+              <div className="actions-cell">
+                <input
+                  value={categoryNameDrafts[category.id] ?? category.name}
+                  onChange={(e) => setCategoryNameDrafts({ ...categoryNameDrafts, [category.id]: e.target.value })}
+                  style={{ fontWeight: 700, fontSize: "1.1rem", width: "200px" }}
+                />
+                <button
+                  className="btn-sm btn-primary"
+                  disabled={
+                    savingCategoryNameId === category.id ||
+                    (categoryNameDrafts[category.id] ?? category.name).trim() === category.name
+                  }
+                  onClick={() => renameCategory(category)}
+                >
+                  {savingCategoryNameId === category.id ? "جاري الحفظ..." : "حفظ الاسم"}
+                </button>
+              </div>
               <button
                 className="btn-danger btn-sm"
                 disabled={deletingCategoryId === category.id}

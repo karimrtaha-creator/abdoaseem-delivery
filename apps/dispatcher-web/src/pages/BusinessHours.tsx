@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
 import type { Profile } from "../lib/useProfile";
 
@@ -89,29 +89,53 @@ function BusinessHoursCard({ profile }: { profile: Profile }) {
 }
 
 interface SiteSettingsRow {
-  promo_video_url: string | null;
   promo_video_heading: string;
 }
 
-// Same singleton pattern as BusinessHoursCard above, targeting site_settings
-// instead (migration 0063/0065) - lets Karim swap/remove the homepage promo
-// video and edit its heading from here, no code change needed. Empty video
-// link hides the whole section on the homepage (see customer-web Home.tsx).
+interface PromoVideo {
+  id: number;
+  video_url: string;
+  created_at: string;
+}
+
+async function callFunction<T>(name: string, body: unknown): Promise<T> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  const { data, error } = await supabase.functions.invoke(name, {
+    body: body as any,
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (error) throw new Error(error.message);
+  return data as T;
+}
+
+// Heading still lives on the site_settings singleton (0063); the videos
+// themselves are now a list (0067) - add as many Facebook links as
+// needed, or upload a video file directly (0068) when a link is awkward
+// to get. Empty list hides the whole section on the homepage (see
+// customer-web Home.tsx).
 function PromoVideoCard({ profile }: { profile: Profile }) {
-  const [saved_, setSaved_] = useState<SiteSettingsRow | null>(null);
-  const [videoUrl, setVideoUrl] = useState("");
+  const [videos, setVideos] = useState<PromoVideo[]>([]);
+  const [savedHeading, setSavedHeading] = useState("");
   const [heading, setHeading] = useState("");
+  const [newVideoUrl, setNewVideoUrl] = useState("");
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingHeading, setSavingHeading] = useState(false);
+  const [addingLink, setAddingLink] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [justSaved, setJustSaved] = useState(false);
+  const [justSavedHeading, setJustSavedHeading] = useState(false);
 
   async function load() {
-    const { data } = await supabase.from("site_settings").select("promo_video_url, promo_video_heading").eq("id", 1).maybeSingle();
-    const row = data as SiteSettingsRow | null;
-    setSaved_(row);
-    setVideoUrl(row?.promo_video_url ?? "");
-    setHeading(row?.promo_video_heading ?? "");
+    const [{ data: settingsData }, { data: videosData }] = await Promise.all([
+      supabase.from("site_settings").select("promo_video_heading").eq("id", 1).maybeSingle(),
+      supabase.from("promo_videos").select("id, video_url, created_at").order("created_at"),
+    ]);
+    const settingsRow = settingsData as SiteSettingsRow | null;
+    setSavedHeading(settingsRow?.promo_video_heading ?? "");
+    setHeading(settingsRow?.promo_video_heading ?? "");
+    setVideos((videosData as PromoVideo[]) ?? []);
     setLoading(false);
   }
 
@@ -119,58 +143,135 @@ function PromoVideoCard({ profile }: { profile: Profile }) {
     load();
   }, []);
 
-  async function save() {
+  async function saveHeading() {
     setError(null);
-    setJustSaved(false);
+    setJustSavedHeading(false);
     const trimmedHeading = heading.trim();
     if (!trimmedHeading) return setError("عنوان السكشن مينفعش يبقى فاضي");
-    setSaving(true);
-    const trimmedUrl = videoUrl.trim();
+    setSavingHeading(true);
     const { error: updateError } = await supabase
       .from("site_settings")
-      .update({ promo_video_url: trimmedUrl || null, promo_video_heading: trimmedHeading, updated_by: profile.id })
+      .update({ promo_video_heading: trimmedHeading, updated_by: profile.id })
       .eq("id", 1);
-    setSaving(false);
+    setSavingHeading(false);
     if (updateError) {
       setError(updateError.message);
       return;
     }
-    setJustSaved(true);
+    setJustSavedHeading(true);
+    load();
+  }
+
+  async function addLink(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const trimmedUrl = newVideoUrl.trim();
+    if (!trimmedUrl) return setError("اكتب لينك الفيديو");
+    setAddingLink(true);
+    const { error: insertError } = await supabase.from("promo_videos").insert({ video_url: trimmedUrl, created_by: profile.id });
+    setAddingLink(false);
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+    setNewVideoUrl("");
+    load();
+  }
+
+  async function uploadFile(file: File) {
+    setError(null);
+    setUploadingFile(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      await callFunction("upload-video", formData);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "فشل رفع الفيديو");
+    } finally {
+      setUploadingFile(false);
+    }
+  }
+
+  async function removeVideo(video: PromoVideo) {
+    if (!confirm("متأكد إنك عايز تشيل الفيديو ده من الصفحة الرئيسية؟")) return;
+    setDeletingId(video.id);
+    setError(null);
+    const { error: deleteError } = await supabase.from("promo_videos").delete().eq("id", video.id);
+    setDeletingId(null);
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
     load();
   }
 
   if (loading) return <p className="muted">جاري التحميل...</p>;
 
-  const dirty = videoUrl.trim() !== (saved_?.promo_video_url ?? "") || heading.trim() !== (saved_?.promo_video_heading ?? "");
+  const headingDirty = heading.trim() !== savedHeading;
 
   return (
     <div className="card">
-      <h2>فيديو الصفحة الرئيسية</h2>
+      <h2>فيديوهات الصفحة الرئيسية</h2>
       <p className="muted">
-        اللينك والعنوان اللي بيظهروا فوق فيديو الفيسبوك في صفحة الموقع الرئيسية. سيب خانة اللينك فاضية علشان تشيل
-        الفيديو خالص من الموقع، أو حط لينك جديد بدل القديم عادي.
+        العنوان اللي بيظهر فوق الفيديوهات في صفحة الموقع الرئيسية، وقائمة الفيديوهات نفسها - تقدر تضيف أكتر من
+        لينك فيسبوك، أو ترفع فيديو من جهازك مباشرة لو اللينك صعب. امسح كل الفيديوهات علشان تشيل السكشن كله من
+        الموقع.
       </p>
 
       <label>
         عنوان السكشن
         <input value={heading} onChange={(e) => setHeading(e.target.value)} placeholder="شوفنا وإحنا بنطبخ" />
       </label>
-      <label>
-        لينك الفيديو (فيسبوك)
-        <input
-          type="url"
-          value={videoUrl}
-          onChange={(e) => setVideoUrl(e.target.value)}
-          placeholder="https://www.facebook.com/.../videos/..."
-        />
-      </label>
-
       {error && <p className="error-text">{error}</p>}
-      {justSaved && !dirty && <p className="muted">اتحفظ.</p>}
-
-      <button className="btn-primary" disabled={saving || !dirty} onClick={save}>
-        {saving ? "جاري الحفظ..." : "حفظ"}
+      {justSavedHeading && !headingDirty && <p className="muted">اتحفظ.</p>}
+      <button className="btn-primary" disabled={savingHeading || !headingDirty} onClick={saveHeading}>
+        {savingHeading ? "جاري الحفظ..." : "حفظ العنوان"}
       </button>
+
+      <div style={{ marginTop: "var(--space-4)", paddingTop: "var(--space-3)", borderTop: "1px solid var(--border)" }}>
+        <p className="muted" style={{ margin: "0 0 8px" }}>الفيديوهات ({videos.length})</p>
+        {videos.length === 0 && <p className="muted">مفيش فيديوهات مضافة لسه.</p>}
+        {videos.map((v) => (
+          <div key={v.id} className="actions-cell" style={{ alignItems: "center", marginBottom: 6 }}>
+            <span dir="ltr" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "360px" }}>
+              {v.video_url}
+            </span>
+            <button className="btn-sm btn-link" style={{ color: "var(--color-alert)" }} disabled={deletingId === v.id} onClick={() => removeVideo(v)}>
+              {deletingId === v.id ? "جاري الحذف..." : "حذف"}
+            </button>
+          </div>
+        ))}
+
+        <form onSubmit={addLink} className="actions-cell" style={{ marginTop: 8 }}>
+          <input
+            type="url"
+            dir="ltr"
+            style={{ flex: 1, minWidth: "220px" }}
+            value={newVideoUrl}
+            onChange={(e) => setNewVideoUrl(e.target.value)}
+            placeholder="https://www.facebook.com/.../videos/..."
+          />
+          <button className="btn-sm btn-primary" type="submit" disabled={addingLink}>
+            {addingLink ? "جاري الإضافة..." : "+ إضافة لينك"}
+          </button>
+        </form>
+
+        <label className="btn-sm btn-primary" style={{ cursor: "pointer", display: "inline-block", marginTop: 8 }}>
+          {uploadingFile ? "جاري الرفع..." : "أو ارفع فيديو من جهازك (حد أقصى 25 ميجا)"}
+          <input
+            type="file"
+            accept="video/mp4,video/webm,video/quicktime"
+            style={{ display: "none" }}
+            disabled={uploadingFile}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) uploadFile(file);
+              e.target.value = "";
+            }}
+          />
+        </label>
+      </div>
     </div>
   );
 }

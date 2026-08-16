@@ -368,6 +368,11 @@ export function Addresses() {
                 onChange={(e) => {
                   setForm({ ...form, nearest_branch_id: e.target.value, zone_id: "" });
                   setZoneSearch("");
+                  // Karim's request: no extra click needed - picking a
+                  // branch immediately asks for the device location too,
+                  // instead of making the customer separately hunt for the
+                  // "استخدم موقعي الحالي" button below.
+                  if (e.target.value) useMyLocation();
                 }}
               >
                 <option value="">اختار الفرع</option>

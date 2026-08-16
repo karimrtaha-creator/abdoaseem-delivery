@@ -352,6 +352,7 @@ export function Checkout() {
           <label htmlFor="voucher-code">كود خصم (اختياري)</label>
           <input
             id="voucher-code"
+            dir="ltr"
             value={voucherCode}
             onChange={(e) => setVoucherCode(e.target.value)}
             placeholder="اكتب الكود لو عندك"

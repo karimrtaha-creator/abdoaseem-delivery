@@ -133,20 +133,29 @@ export function VoucherManagement({ profile }: { profile: Profile }) {
     <div>
       <div className="card">
         <h2>إضافة كود خصم جديد</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          العميل بيكتب الكود ده في صفحة الدفع فيتخصم من قيمة طلبه. أي خانة تسيبها فاضية معناها إنها من غير قيد
+          خالص (استخدام بلا حدود، من غير حد أدنى للأوردر، من غير تاريخ انتهاء).
+        </p>
         <form onSubmit={create}>
           <div className="field">
-            <label htmlFor="voucher-new-code">الكود</label>
-            <input id="voucher-new-code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="GHABASHY20" />
+            <label htmlFor="voucher-new-code">الكود اللي العميل هيكتبه</label>
+            <input id="voucher-new-code" dir="ltr" value={code} onChange={(e) => setCode(e.target.value)} placeholder="GHABASHY20" />
+            <p className="muted" style={{ margin: "4px 0 0", fontSize: "0.85rem" }}>
+              حروف إنجليزي وأرقام، من غير مسافات - هيتسجل كبيتال أوتوماتيك.
+            </p>
           </div>
           <div className="field">
             <label htmlFor="voucher-type">نوع الخصم</label>
             <select id="voucher-type" value={discountType} onChange={(e) => setDiscountType(e.target.value as "percentage" | "fixed")}>
-              <option value="percentage">نسبة مئوية (%)</option>
-              <option value="fixed">مبلغ ثابت (ج)</option>
+              <option value="percentage">نسبة مئوية (%) - مثلاً 15% من قيمة الأوردر</option>
+              <option value="fixed">مبلغ ثابت (ج) - مثلاً 20 جنيه ثابتة</option>
             </select>
           </div>
           <div className="field">
-            <label htmlFor="voucher-value">القيمة</label>
+            <label htmlFor="voucher-value">
+              {discountType === "percentage" ? "النسبة (من غير علامة %)" : "المبلغ بالجنيه"}
+            </label>
             <input
               id="voucher-value"
               type="number"
@@ -156,7 +165,7 @@ export function VoucherManagement({ profile }: { profile: Profile }) {
             />
           </div>
           <div className="field">
-            <label htmlFor="voucher-min-order">أقل قيمة أوردر يشتغل عندها الكود (سيبها فاضية = من غير حد أدنى)</label>
+            <label htmlFor="voucher-min-order">أقل قيمة أوردر يشتغل عندها الكود (اختياري)</label>
             <input
               id="voucher-min-order"
               type="number"
@@ -164,10 +173,17 @@ export function VoucherManagement({ profile }: { profile: Profile }) {
               onChange={(e) => setMinOrderValue(e.target.value)}
               placeholder="مثال: 200"
             />
+            <p className="muted" style={{ margin: "4px 0 0", fontSize: "0.85rem" }}>
+              لو حطيت 200، الكود مش هيشتغل إلا لو قيمة السلة 200 جنيه فأكتر.
+            </p>
           </div>
           <div className="field">
-            <label htmlFor="voucher-max-uses">أقصى عدد استخدام (سيبها فاضية = بلا حدود)</label>
-            <input id="voucher-max-uses" type="number" value={maxUses} onChange={(e) => setMaxUses(e.target.value)} />
+            <label htmlFor="voucher-max-uses">أقصى عدد مرات استخدام إجمالي (اختياري)</label>
+            <input id="voucher-max-uses" type="number" value={maxUses} onChange={(e) => setMaxUses(e.target.value)} placeholder="مثال: 100" />
+            <p className="muted" style={{ margin: "4px 0 0", fontSize: "0.85rem" }}>
+              العدد ده بيتوزع على كل العملاء مع بعض - لكن كل عميل برضه مينفعش يستخدم نفس الكود مرتين، حتى لو
+              العدد لسه فاضل.
+            </p>
           </div>
           <div className="field">
             <label htmlFor="voucher-expires">تاريخ انتهاء الصلاحية (اختياري)</label>
@@ -195,8 +211,8 @@ export function VoucherManagement({ profile }: { profile: Profile }) {
                 <th>الكود</th>
                 <th>الخصم</th>
                 <th>أقل قيمة أوردر</th>
-                <th>الاستخدام</th>
-                <th>الصلاحية</th>
+                <th>عدد مرات الاستخدام / الحد الأقصى</th>
+                <th>تاريخ الانتهاء</th>
                 <th>الحالة</th>
                 <th></th>
               </tr>
