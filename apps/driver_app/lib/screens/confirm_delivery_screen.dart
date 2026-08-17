@@ -126,7 +126,7 @@ class _ConfirmDeliveryScreenState extends State<ConfirmDeliveryScreen> {
                   label: const Text('العميل مش موجود'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: () => _call(widget.order.customerPhone),
+                  onPressed: widget.order.customerPhone == null ? null : () => _call(widget.order.customerPhone!),
                   icon: const Icon(Icons.call),
                   label: const Text('اتصل بالعميل'),
                 ),

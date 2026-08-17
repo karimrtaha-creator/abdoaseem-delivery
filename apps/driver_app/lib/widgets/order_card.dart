@@ -46,7 +46,7 @@ class OrderCard extends StatelessWidget {
                     Text('أوردر #${order.posOrderId ?? order.id}',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     const SizedBox(height: 4),
-                    Text(order.customerPhone, style: const TextStyle(color: Colors.black54)),
+                    Text(order.customerPhone ?? 'رقم غير متاح', style: const TextStyle(color: Colors.black54)),
                   ],
                 ),
               ),

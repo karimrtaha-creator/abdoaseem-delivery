@@ -106,7 +106,7 @@ class _LocationMapScreenState extends State<LocationMapScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('تثبيت موقع العميل')),
+      appBar: AppBar(title: Text(widget.initialLatitude != null ? 'إضافة لوكيشن جديد' : 'تثبيت موقع العميل')),
       body: Stack(
         children: [
           FlutterMap(

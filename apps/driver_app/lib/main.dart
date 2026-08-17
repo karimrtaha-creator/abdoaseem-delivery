@@ -5,6 +5,7 @@ import 'supabase_config.dart';
 import 'services/auth_service.dart';
 import 'services/profile_service.dart';
 import 'services/push_service.dart';
+import 'services/secure_local_storage.dart';
 import 'screens/login_screen.dart';
 import 'screens/orders_list_screen.dart';
 import 'screens/dispatcher_home_screen.dart';
@@ -12,7 +13,11 @@ import 'screens/dispatcher_home_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  await Supabase.initialize(url: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey);
+  await Supabase.initialize(
+    url: SupabaseConfig.url,
+    publishableKey: SupabaseConfig.anonKey,
+    authOptions: const FlutterAuthClientOptions(localStorage: SecureLocalStorage()),
+  );
   runApp(const DriverApp());
 }
 

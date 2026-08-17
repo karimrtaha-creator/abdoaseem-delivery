@@ -30,10 +30,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final order = await _ordersService.fetchOrder(widget.orderId);
     // address_id (the newer multi-address book) only exists for self-
     // checkout customer orders - call_center phone orders never set it,
-    // so those keep falling back to the old single-address profile.
-    final address = order.addressId != null
-        ? await _ordersService.fetchSavedAddress(order.addressId!)
-        : await _ordersService.fetchCustomerAddress(order.customerId);
+    // so those keep falling back to the old single-address profile. Both
+    // are skipped entirely for a not-yet-received order - nothing to show
+    // there yet anyway, and no reason to fetch it.
+    final address = !order.isReceived
+        ? null
+        : order.addressId != null
+            ? await _ordersService.fetchSavedAddress(order.addressId!)
+            : await _ordersService.fetchCustomerAddress(order.customerId);
     if (!mounted) return;
     setState(() {
       _order = order;
@@ -74,7 +78,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     if (saved == true) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('اتحفظ موقع العميل')),
+        const SnackBar(content: Text('اتحفظ الموقع الجديد')),
       );
       _load();
     }
@@ -87,6 +91,27 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     }
     final order = _order!;
     final address = _address;
+
+    // Server-enforced already (get_my_driver_order never returns
+    // customer_phone before driver_received_at is set) - this is a second,
+    // defensive check on the same rule at the UI layer, not the only place
+    // it's enforced. Reachable only if this screen is somehow opened for an
+    // order still in the "loaded" list (it shouldn't be, per
+    // orders_list_screen, but the rule holds regardless of how it's reached).
+    if (!order.isReceived) {
+      return Scaffold(
+        appBar: AppBar(title: Text('أوردر #${order.posOrderId ?? order.id}')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'لازم تستلم الأوردر ده الأول من شاشة الأوردرات قبل ما تشوف بيانات العميل.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(title: Text('أوردر #${order.posOrderId ?? order.id}')),
@@ -120,10 +145,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                       children: [
                         const Icon(Icons.phone, size: 18, color: Colors.black54),
                         const SizedBox(width: 6),
-                        Text(order.customerPhone),
+                        Text(order.customerPhone ?? 'رقم غير متاح'),
                         const Spacer(),
                         TextButton.icon(
-                          onPressed: () => _call(order.customerPhone),
+                          onPressed: order.customerPhone == null ? null : () => _call(order.customerPhone!),
                           icon: const Icon(Icons.call),
                           label: const Text('اتصال'),
                         ),
@@ -131,11 +156,15 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                     ),
                     if (order.addressId != null && address != null) ...[
                       const SizedBox(height: 12),
+                      const Divider(),
+                      const SizedBox(height: 4),
+                      const Text('لو وصلت وطلعت الموقع المسجل غلط:', style: TextStyle(color: Colors.black54, fontSize: 13)),
+                      const SizedBox(height: 8),
                       OutlinedButton.icon(
                         onPressed: _openLocationMap,
-                        icon: const Icon(Icons.location_pin),
+                        icon: const Icon(Icons.wrong_location),
                         label: Text(
-                          address['latitude'] != null ? 'تعديل موقع العميل على الخريطة' : 'تثبيت موقع العميل على الخريطة',
+                          address['latitude'] != null ? 'الموقع غلط - إضافة لوكيشن جديد' : 'تثبيت موقع العميل على الخريطة',
                         ),
                       ),
                     ],
