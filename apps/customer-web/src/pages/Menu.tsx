@@ -317,9 +317,17 @@ export function Menu() {
               {combos.map((combo) => {
                 const groups = choiceGroupsByCombo.get(combo.id) ?? [];
                 const selection = comboSelections[combo.id] ?? {};
-                const optionIds = groups.map((g) => selection[g.id]).filter(Boolean);
+                // Same derivation handleAddCombo uses (unfiltered ids, only
+                // once every group is actually selected) - filtering out
+                // not-yet-chosen groups here produced a different, shorter
+                // key than the one that ever actually lands in the cart, so
+                // the "already in cart" count read as 0 while a selection
+                // was still in progress even when that exact combo variant
+                // truly was already in the cart.
+                const selectionComplete = groups.every((g) => selection[g.id]);
+                const optionIds = groups.map((g) => selection[g.id]);
                 const key = groups.length > 0 ? `combo-${combo.id}-${optionIds.join("-")}` : `combo-${combo.id}`;
-                const qty = quantityOf(key);
+                const qty = selectionComplete ? quantityOf(key) : 0;
                 return (
                   <div key={combo.id} className="photo-card">
                     {combo.image_url ? (

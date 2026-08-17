@@ -112,6 +112,11 @@ serveWithCors(async (req) => {
     if (!["dispatcher", "driver"].includes(role)) {
       return errorResponse("branch_manager can only create dispatcher or driver accounts", 403);
     }
+    // A branch_manager displaced by assign-manager keeps their role and
+    // stays active, but branch_id is nulled out (see assign-manager) - such
+    // an account has no "my branch only" left to scope this to, so it must
+    // be rejected rather than silently creating an unscoped staff account.
+    if (!caller.branch_id) return errorResponse("your account has no branch assigned - contact a general manager", 403);
     // Forced to the caller's own branch - never trust a client-supplied
     // branch_id for a role whose whole authority is "my branch only".
     resolvedBranchId = caller.branch_id;

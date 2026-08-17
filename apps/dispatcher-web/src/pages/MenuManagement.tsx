@@ -103,9 +103,14 @@ export function MenuManagement() {
     setItems(loadedItems);
     setCombos(loadedCombos);
     setComboChoiceGroups((choiceGroupsRes.data as ComboChoiceGroup[]) ?? []);
-    setDescriptionDrafts(Object.fromEntries(loadedItems.map((i) => [i.id, i.description ?? ""])));
-    setPriceDrafts(Object.fromEntries(loadedItems.map((i) => [i.id, String(i.price)])));
-    setComboPriceDrafts(Object.fromEntries(loadedCombos.map((c) => [c.id, String(c.price)])));
+    // load() is called after every unrelated mutation on this page (reorder,
+    // create item/combo, etc.) - keeping an already-typed, not-yet-saved
+    // draft instead of overwriting it stops one action from silently
+    // erasing what staff is mid-typing in a different field. A draft is
+    // only reset to the server value the first time an id is seen.
+    setDescriptionDrafts((prev) => Object.fromEntries(loadedItems.map((i) => [i.id, prev[i.id] ?? (i.description ?? "")])));
+    setPriceDrafts((prev) => Object.fromEntries(loadedItems.map((i) => [i.id, prev[i.id] ?? String(i.price)])));
+    setComboPriceDrafts((prev) => Object.fromEntries(loadedCombos.map((c) => [c.id, prev[c.id] ?? String(c.price)])));
     const label = comboSectionRes.data?.label ?? "الكومبوهات";
     setComboSectionLabel(label);
     setComboSectionLabelDraft(label);

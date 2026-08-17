@@ -24,15 +24,25 @@ export function useProfile(session: Session | null) {
       return;
     }
     setLoading(true);
+    // Guards against a rapid session change (e.g. quick logout/login as a
+    // different staff account) resolving out of order - without this, an
+    // older fetch for the previous session could overwrite the profile
+    // after a newer fetch already resolved, briefly showing a stale
+    // role/branch.
+    let cancelled = false;
     supabase
       .from("users")
       .select("id, name, role, branch_id, region_id, is_active")
       .eq("id", session.user.id)
       .single()
       .then(({ data }) => {
+        if (cancelled) return;
         setProfile(data as Profile | null);
         setLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [session]);
 
   return { profile, loading };

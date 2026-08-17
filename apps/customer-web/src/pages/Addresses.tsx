@@ -211,35 +211,47 @@ export function Addresses() {
       setError("الرقم البديل لازم يكون رقم موبايل مصري صحيح");
       return;
     }
-    setSaving(true);
-    const payload = {
-      user_id: session!.user.id,
-      label: form.label.trim() || null,
-      street: form.street.trim(),
-      building: form.building.trim(),
-      floor: form.floor.trim() || null,
-      apartment: form.apartment.trim() || null,
-      landmark: form.landmark.trim() || null,
-      main_region_id: Number(form.main_region_id),
-      nearest_branch_id: Number(form.nearest_branch_id),
-      zone_id: form.zone_id ? Number(form.zone_id) : null,
-      alt_phone: form.alt_phone ? form.alt_phone.replace(/\D/g, "") : null,
-      alt_phone_has_whatsapp: form.alt_phone ? form.alt_phone_has_whatsapp : false,
-      latitude: form.latitude,
-      longitude: form.longitude,
-    };
-    const query = form.id
-      ? supabase.from("customer_addresses").update(payload).eq("id", form.id).select().single()
-      : supabase.from("customer_addresses").insert(payload).select().single();
-    const { data, error: saveError } = await query;
-    setSaving(false);
-    if (saveError) {
-      setError(saveError.message);
+    // Guards the session read below explicitly instead of a non-null
+    // assertion - if the session expired right as the form was submitted
+    // (token refresh failing, tab left open a long time), this fails
+    // cleanly with a message instead of throwing inside the handler and
+    // leaving the button stuck on "جاري الحفظ..." forever.
+    if (!session) {
+      setError("انتهت جلستك - سجّل دخول تاني وحاول تحفظ العنوان من جديد");
       return;
     }
-    const saved = data as CustomerAddress;
-    setAddresses((prev) => (form.id ? prev.map((a) => (a.id === saved.id ? saved : a)) : [saved, ...prev]));
-    setFormOpen(false);
+    setSaving(true);
+    try {
+      const payload = {
+        user_id: session.user.id,
+        label: form.label.trim() || null,
+        street: form.street.trim(),
+        building: form.building.trim(),
+        floor: form.floor.trim() || null,
+        apartment: form.apartment.trim() || null,
+        landmark: form.landmark.trim() || null,
+        main_region_id: Number(form.main_region_id),
+        nearest_branch_id: Number(form.nearest_branch_id),
+        zone_id: form.zone_id ? Number(form.zone_id) : null,
+        alt_phone: form.alt_phone ? form.alt_phone.replace(/\D/g, "") : null,
+        alt_phone_has_whatsapp: form.alt_phone ? form.alt_phone_has_whatsapp : false,
+        latitude: form.latitude,
+        longitude: form.longitude,
+      };
+      const query = form.id
+        ? supabase.from("customer_addresses").update(payload).eq("id", form.id).select().single()
+        : supabase.from("customer_addresses").insert(payload).select().single();
+      const { data, error: saveError } = await query;
+      if (saveError) {
+        setError(saveError.message);
+        return;
+      }
+      const saved = data as CustomerAddress;
+      setAddresses((prev) => (form.id ? prev.map((a) => (a.id === saved.id ? saved : a)) : [saved, ...prev]));
+      setFormOpen(false);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleDelete(id: number) {

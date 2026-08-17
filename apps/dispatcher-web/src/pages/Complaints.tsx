@@ -37,6 +37,7 @@ export function Complaints() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"open" | "all">("open");
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function load() {
     // Finding #003 (security audit): was fetching every complaint ever
@@ -85,8 +86,10 @@ export function Complaints() {
 
   async function resolve(id: number) {
     setBusyId(id);
-    await supabase.from("complaints").update({ status: "resolved" }).eq("id", id);
+    setError(null);
+    const { error: updateError } = await supabase.from("complaints").update({ status: "resolved" }).eq("id", id);
     setBusyId(null);
+    if (updateError) return setError(updateError.message);
     load();
   }
 
@@ -94,6 +97,7 @@ export function Complaints() {
 
   return (
     <div className="card">
+      {error && <p className="error-text">{error}</p>}
       <div className="inline-row" style={{ justifyContent: "space-between" }}>
         <h2>الشكاوى ({visible.length})</h2>
         <select value={filter} onChange={(e) => setFilter(e.target.value as "open" | "all")}>

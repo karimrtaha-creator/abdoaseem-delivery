@@ -186,6 +186,13 @@ export function Checkout() {
     if (cart.lines.length === 0) return setError("سلتك فاضية");
     if (!selectedAddressId) return setError("اختار عنوان التوصيل");
     if (branchUnavailable) return setError("للأسف الفرع القريب من العنوان ده مش بيوصل دلوقتي - جرب عنوان تاني أو كلمنا على 19860");
+    // A voucher code is still mid-debounce-check (up to 500ms after typing)
+    // right when the customer hits submit - without this, voucher_code
+    // would go out as undefined and the order would create with no
+    // discount applied, with nothing telling the customer why.
+    if (voucherCode.trim() && voucherState.checking) {
+      return setError("لحظة، لسه بنتأكد من كود الخصم...");
+    }
     if (paymentMethod === "instapay_transfer" && !proofFile) {
       return setError("لازم صورة إثبات التحويل لو الدفع انستاباي");
     }

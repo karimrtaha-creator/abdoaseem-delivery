@@ -159,12 +159,17 @@ export function BranchManagement() {
     ]);
     const loadedBranches = (branchesRes.data as Branch[]) ?? [];
     setBranches(loadedBranches);
-    setFeeDrafts(Object.fromEntries(loadedBranches.map((b) => [b.id, String(b.delivery_fee)])));
+    // load() is called after every unrelated mutation on this page (zone
+    // toggle, manager assignment, etc.) - keeping an already-typed, not-yet-
+    // saved draft instead of overwriting it stops one action from silently
+    // erasing what staff is mid-typing in a different field. A draft is
+    // only reset to the server value the first time an id is seen.
+    setFeeDrafts((prev) => Object.fromEntries(loadedBranches.map((b) => [b.id, prev[b.id] ?? String(b.delivery_fee)])));
     setRegions((regionsRes.data as Region[]) ?? []);
     setStaff((staffRes.data as StaffUser[]) ?? []);
     const loadedZones = (zonesRes.data as DeliveryZone[]) ?? [];
     setZones(loadedZones);
-    setZoneFeeDrafts(Object.fromEntries(loadedZones.map((z) => [z.id, String(z.delivery_fee)])));
+    setZoneFeeDrafts((prev) => Object.fromEntries(loadedZones.map((z) => [z.id, prev[z.id] ?? String(z.delivery_fee)])));
     setTodaysOrders((ordersRes.data as OrderStatRow[]) ?? []);
     setLoading(false);
   }
@@ -295,8 +300,13 @@ export function BranchManagement() {
 
   async function toggleDelivery(branch: Branch) {
     setBusyKey(`delivery-${branch.id}`);
-    await supabase.from("branches").update({ is_delivery_available: !branch.is_delivery_available }).eq("id", branch.id);
+    setError(null);
+    const { error: updateError } = await supabase
+      .from("branches")
+      .update({ is_delivery_available: !branch.is_delivery_available })
+      .eq("id", branch.id);
     setBusyKey(null);
+    if (updateError) return setError(updateError.message);
     load();
   }
 

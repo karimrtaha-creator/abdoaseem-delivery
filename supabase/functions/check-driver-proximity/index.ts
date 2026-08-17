@@ -75,6 +75,21 @@ serveWithCors(async (req) => {
     const distance = distanceMeters(driver.current_lat, driver.current_lng, address.latitude, address.longitude);
     if (distance > PROXIMITY_METERS) continue;
 
+    // Claims this order before sending the push, not after - sendPush is a
+    // real HTTP round-trip, so if this function runs twice concurrently
+    // (e.g. a slow previous invocation still finishing when the next cron
+    // tick fires), both could otherwise read the same not-yet-alerted
+    // order and both push. Scoping the UPDATE to proximity_alert_sent=false
+    // and checking the returned row makes only the first invocation to
+    // reach here actually win the claim.
+    const { data: claimed } = await admin
+      .from("orders")
+      .update({ proximity_alert_sent: true })
+      .eq("id", order.id)
+      .eq("proximity_alert_sent", false)
+      .select("id");
+    if (!claimed || claimed.length === 0) continue;
+
     const { data: customer } = await admin.from("users").select("fcm_token").eq("id", order.customer_id).single();
     if (customer?.fcm_token) {
       await sendPush(
@@ -85,7 +100,6 @@ serveWithCors(async (req) => {
         webUrl ? `${webUrl}/orders` : undefined,
       );
     }
-    await admin.from("orders").update({ proximity_alert_sent: true }).eq("id", order.id);
     alerted++;
   }
 
