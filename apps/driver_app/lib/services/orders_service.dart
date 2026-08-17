@@ -62,12 +62,25 @@ class OrdersService {
     required double longitude,
     required String driverId,
   }) async {
-    await _client.from('customer_addresses').update({
-      'latitude': latitude,
-      'longitude': longitude,
-      'location_saved_at': DateTime.now().toUtc().toIso8601String(),
-      'location_saved_by': driverId,
-    }).eq('id', addressId);
+    // Postgrest doesn't error when an UPDATE's WHERE clause (further
+    // narrowed here by the customer_addresses_update_driver_current_order
+    // RLS policy) matches zero rows - it just "succeeds" silently. Without
+    // checking the returned rows, an order reassigned to a different
+    // driver between opening this screen and saving would report "location
+    // saved" while writing nothing.
+    final updated = await _client
+        .from('customer_addresses')
+        .update({
+          'latitude': latitude,
+          'longitude': longitude,
+          'location_saved_at': DateTime.now().toUtc().toIso8601String(),
+          'location_saved_by': driverId,
+        })
+        .eq('id', addressId)
+        .select('id');
+    if (updated.isEmpty) {
+      throw Exception('العنوان ده مش تابع لأوردر شغال عندك دلوقتي - جرب تحدّث الشاشة');
+    }
   }
 
   /// Section 6 "سجل الأداء اليومي": today's delivered orders for this

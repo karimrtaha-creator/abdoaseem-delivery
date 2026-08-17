@@ -49,9 +49,25 @@ class PushService {
     messaging.onTokenRefresh.listen((_) => _registerToken());
   }
 
+  // init() is called un-awaited from main.dart (right after a driver logs
+  // in) - a transient failure here (e.g. spotty mobile data at the start
+  // of a shift) used to just become an unhandled Future error with no
+  // retry, silently leaving fcm_token null/stale until FCM's own
+  // onTokenRefresh happens to fire again (which can be days), meaning the
+  // driver gets zero "new order" pushes for the rest of the shift. A few
+  // quick retries covers the common transient case without needing a full
+  // background job.
   Future<void> _registerToken() async {
-    final token = await FirebaseMessaging.instance.getToken();
-    if (token != null) await _profileService.saveFcmToken(token);
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        final token = await FirebaseMessaging.instance.getToken();
+        if (token != null) await _profileService.saveFcmToken(token);
+        return;
+      } catch (e) {
+        debugPrint('PushService: failed to register FCM token (attempt ${attempt + 1}/3): $e');
+        if (attempt < 2) await Future.delayed(Duration(seconds: 2 * (attempt + 1)));
+      }
+    }
   }
 
   void _showForegroundNotification(RemoteMessage message) {

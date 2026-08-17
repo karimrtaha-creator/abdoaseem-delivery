@@ -50,7 +50,17 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   Future<void> _openLocationMap() async {
     final order = _order!;
     final address = _address!;
-    final driverId = Supabase.instance.client.auth.currentUser!.id;
+    // Explicit null check instead of a force-unwrap - if the session has
+    // expired since this screen opened (phone idle a long time, refresh
+    // token failed), this used to crash the screen instead of just
+    // failing to open the map.
+    final driverId = Supabase.instance.client.auth.currentUser?.id;
+    if (driverId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('لازم تسجل دخول تاني الأول')),
+      );
+      return;
+    }
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => LocationMapScreen(

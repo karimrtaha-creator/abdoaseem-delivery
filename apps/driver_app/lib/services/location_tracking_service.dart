@@ -15,6 +15,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class LocationTrackingService {
   StreamSubscription<Position>? _positionSub;
   bool get isTracking => _positionSub != null;
+  // start() has await-gaps (service-enabled check, permission check) before
+  // it assigns _positionSub - callers (OrdersListScreen's realtime stream
+  // listener) invoke start()/stop() un-awaited, so a stop() landing while
+  // an earlier start() is still in one of those gaps used to be a no-op
+  // (nothing to cancel yet), then the earlier start() would finish after
+  // and turn tracking back on - GPS streaming (and battery/location writes
+  // to `users`) even after the driver's last active order finished. Each
+  // start()/stop() call bumps this and a start() checks it's still the
+  // most recent call before actually subscribing.
+  int _opId = 0;
 
   /// Foreground ("while in use") permission is enough to START the
   /// stream, but Android silently stops delivering updates the moment the
@@ -37,9 +47,12 @@ class LocationTrackingService {
 
   Future<void> start() async {
     if (isTracking) return;
+    final opId = ++_opId;
     if (!await Geolocator.isLocationServiceEnabled()) return;
+    if (opId != _opId) return;
     final permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) return;
+    if (opId != _opId) return;
 
     final settings = AndroidSettings(
       accuracy: LocationAccuracy.high,
@@ -52,13 +65,22 @@ class LocationTrackingService {
       ),
     );
 
-    _positionSub = Geolocator.getPositionStream(locationSettings: settings).listen(
+    final sub = Geolocator.getPositionStream(locationSettings: settings).listen(
       (position) => _pushLocation(position),
       onError: (_) {},
     );
+    if (opId != _opId) {
+      // A stop() (or a newer start()) landed while the permission checks
+      // above were still in flight - don't let this superseded call turn
+      // tracking back on.
+      await sub.cancel();
+      return;
+    }
+    _positionSub = sub;
   }
 
   Future<void> stop() async {
+    _opId++;
     await _positionSub?.cancel();
     _positionSub = null;
   }

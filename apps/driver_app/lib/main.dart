@@ -47,7 +47,27 @@ class _AuthGateState extends State<AuthGate> {
   final _authService = AuthService();
   final _profileService = ProfileService();
   final _pushService = PushService();
-  bool _pushInitStarted = false;
+  // Keyed by user id, not a plain bool - AuthGate's State is never
+  // recreated by sign-out/sign-in (only its build() output swaps), so a
+  // plain "already started" flag would never reset when a different
+  // driver signs in on the same device, leaving the FCM token registered
+  // against the previous driver's account indefinitely.
+  String? _pushInitForUserId;
+
+  @override
+  void initState() {
+    super.initState();
+    // A session going null (sign-out, or a refresh-token failure) must be
+    // able to get back to LoginScreen even if the driver is several
+    // screens deep (OrderDetailScreen, ConfirmDeliveryScreen, etc. are all
+    // pushed on top of this root route and are otherwise unaffected by
+    // AuthGate's own rebuild).
+    _authService.onAuthStateChange.listen((state) {
+      if (state.session == null && mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -115,8 +135,11 @@ class _AuthGateState extends State<AuthGate> {
             // Registers the device's push token once we know this is a
             // real, active driver session - not on every rebuild, and not
             // before we've confirmed the account is allowed to be here.
-            if (!_pushInitStarted) {
-              _pushInitStarted = true;
+            // Re-registers whenever the signed-in user id changes, so a
+            // second driver signing in on the same device (shared/company
+            // phone) always claims the token for their own account.
+            if (_pushInitForUserId != session.user.id) {
+              _pushInitForUserId = session.user.id;
               _pushService.init();
             }
             return const OrdersListScreen();
