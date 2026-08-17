@@ -1,0 +1,22 @@
+-- CRITICAL bug found via load-testing (2026-08-17): handle_new_user()
+-- (0034) inserts every brand-new customer with phone='' as a placeholder
+-- until the client's own follow-up UPDATE sets their real number a moment
+-- later (see customer-web AuthContext.tsx's signUp()). users_phone_key was
+-- a plain UNIQUE(phone) constraint, which does NOT special-case '' - so
+-- the SECOND customer whose follow-up UPDATE hasn't landed yet (dropped
+-- connection, closed tab, abandoned signup, or simply never completing
+-- that step) collides on the same '' value and gets a raw 500 from
+-- /auth/v1/signup. Once one such row is left behind, it permanently
+-- blocks EVERY future customer signup system-wide until someone manually
+-- finds and deletes it - confirmed live: a single abandoned test signup
+-- from earlier in this session broke signup for 30/30 simulated new
+-- customers just now, until the stray row was found and removed.
+--
+-- Fix: a plain UNIQUE constraint can't skip '' - only a partial unique
+-- index can, so this replaces it with one that only enforces uniqueness
+-- once a real phone number is actually set. Multiple customers can now
+-- share the transient '' placeholder state simultaneously, and it still
+-- fully protects against two different accounts ending up with the same
+-- real phone number.
+alter table public.users drop constraint users_phone_key;
+create unique index users_phone_key on public.users (phone) where (phone <> '');

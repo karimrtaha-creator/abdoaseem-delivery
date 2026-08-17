@@ -26,11 +26,18 @@ serveWithCors(async (req) => {
 
   const { data: order, error: orderError } = await admin
     .from("orders")
-    .select("id, driver_id, status, dispatch_time, sla_minutes")
+    .select("id, driver_id, status, dispatch_time, sla_minutes, driver_received_at")
     .eq("id", order_id)
     .single();
   if (orderError || !order) return errorResponse("order not found", 404);
   if (order.driver_id !== caller.id) return errorResponse("this order is not assigned to you", 403);
+  // Driver-app redesign: delivery can't be confirmed before the driver has
+  // gone through the explicit "استلام الطلب" step (receive-order) - closes
+  // the gap where a delivery could otherwise be confirmed for an order the
+  // driver never actually acknowledged picking up.
+  if (!order.driver_received_at) {
+    return errorResponse("you haven't marked this order as received yet", 409);
+  }
 
   const deliveredTime = new Date();
   const delayMinutes = minutesBetween(order.dispatch_time, deliveredTime) - order.sla_minutes;
@@ -51,6 +58,7 @@ serveWithCors(async (req) => {
     .eq("id", order_id)
     .eq("driver_id", caller.id)
     .in("status", ["out_for_delivery", "delayed"])
+    .not("driver_received_at", "is", null)
     .select("id");
   if (updateError) return dbErrorResponse("confirm-delivery", updateError.message);
   if (!updatedRows || updatedRows.length === 0) {
