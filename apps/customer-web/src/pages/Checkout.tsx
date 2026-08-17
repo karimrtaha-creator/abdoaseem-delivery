@@ -71,6 +71,11 @@ export function Checkout() {
       setZoneName(null);
       return;
     }
+    // Guards against an out-of-order response overwriting a newer
+    // selection's fee - e.g. the customer taps address A then quickly taps
+    // address B; if A's round-trip resolves after B's, this stale flag
+    // stops it from clobbering B's already-set fee/zone.
+    let stale = false;
     // Security audit finding MEDIUM-1 (Batch 6): reads via the
     // get_zone_delivery_fee RPC (bounded to exactly this one zone_id)
     // instead of a direct delivery_zones table read - a customer session
@@ -80,6 +85,7 @@ export function Checkout() {
     supabase
       .rpc("get_zone_delivery_fee", { p_zone_id: selectedAddress.zone_id })
       .then(({ data }) => {
+        if (stale) return;
         const row = (data as { delivery_fee: number; zone_name: string; is_active: boolean }[] | null)?.[0];
         // A zone can be disabled after an address saved it - create-order
         // treats that the same way (falls back to the branch's flat fee),
@@ -92,9 +98,17 @@ export function Checkout() {
         setZoneFee(row.delivery_fee);
         setZoneName(row.zone_name);
       });
+    return () => {
+      stale = true;
+    };
   }, [selectedAddress]);
   // Mirrors create-order's own fallback order (zone fee, then flat branch
   // fee) so what the customer sees here matches what actually gets charged.
+  // servingBranch is only null when the address's nearest branch doesn't
+  // deliver and has no fallback configured - that's a real "can't deliver
+  // here" state, not a 0-fee state, so it must never silently price as free
+  // (create-order itself would reject this order with a 422 at submit time).
+  const branchUnavailable = Boolean(selectedAddress) && !servingBranch;
   const deliveryFee = zoneFee ?? servingBranch?.delivery_fee ?? 0;
 
   // Read-only preview via check_voucher (0064) - never redeems the code,
@@ -163,9 +177,15 @@ export function Checkout() {
   }, [session]);
 
   async function submitOrder() {
+    // Guards against a double-tap/double-click firing this twice before
+    // React commits the button's disabled state - without this, both calls
+    // would read the same cart and both create a real, separately-charged
+    // order.
+    if (submitting) return;
     setError(null);
     if (cart.lines.length === 0) return setError("سلتك فاضية");
     if (!selectedAddressId) return setError("اختار عنوان التوصيل");
+    if (branchUnavailable) return setError("للأسف الفرع القريب من العنوان ده مش بيوصل دلوقتي - جرب عنوان تاني أو كلمنا على 19860");
     if (paymentMethod === "instapay_transfer" && !proofFile) {
       return setError("لازم صورة إثبات التحويل لو الدفع انستاباي");
     }
@@ -343,10 +363,14 @@ export function Checkout() {
             <span>{zoneName}</span>
           </div>
         )}
-        <div className="checkout-line">
-          <span>رسوم التوصيل</span>
-          <span>{deliveryFee} ج</span>
-        </div>
+        {branchUnavailable ? (
+          <p className="error-text">للأسف الفرع القريب من العنوان ده مش بيوصل دلوقتي - جرب عنوان تاني أو كلمنا على 19860</p>
+        ) : (
+          <div className="checkout-line">
+            <span>رسوم التوصيل</span>
+            <span>{deliveryFee} ج</span>
+          </div>
+        )}
 
         <div className="field" style={{ marginTop: "var(--space-2)" }}>
           <label htmlFor="voucher-code">كود خصم (اختياري)</label>
@@ -449,7 +473,7 @@ export function Checkout() {
 
       {error && <p className="error-text" style={{ marginTop: "var(--space-3)" }}>{error}</p>}
 
-      <button className="btn btn-primary btn-lg" style={{ width: "100%", marginTop: "var(--space-4)" }} onClick={submitOrder} disabled={submitting}>
+      <button className="btn btn-primary btn-lg" style={{ width: "100%", marginTop: "var(--space-4)" }} onClick={submitOrder} disabled={submitting || branchUnavailable}>
         {submitting ? "جاري الإرسال..." : `تأكيد الطلب - ${orderTotal} ج`}
       </button>
     </div>

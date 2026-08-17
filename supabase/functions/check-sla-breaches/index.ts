@@ -98,13 +98,57 @@ serveWithCors(async (req) => {
     return jsonResponse({ checked, flagged: 0 });
   }
 
-  const { error: updateError } = await admin
-    .from("orders")
-    .update({ status: "delayed" })
-    .in("id", breached.map((o) => o.id));
+  // Each group's UPDATE is re-scoped to the exact status it was selected
+  // under (not just id) - the SELECT above is a snapshot, and time passes
+  // between it and this UPDATE, so an order that was legitimately
+  // cancelled/delivered/moved on by staff in that window must not get
+  // silently overwritten back to 'delayed'. Every other order-mutating
+  // function in this codebase (accept-order, dispatch-order, cancel-order,
+  // confirm-delivery) follows this same "re-check status at write time"
+  // rule for the same reason.
+  const updates: Promise<{ data: { id: number }[] | null; error: { message: string } | null }>[] = [];
+  if (breachedDispatched.length > 0) {
+    updates.push(
+      admin
+        .from("orders")
+        .update({ status: "delayed" })
+        .in("id", breachedDispatched.map((o) => o.id))
+        .eq("status", "out_for_delivery")
+        .select("id"),
+    );
+  }
+  if (breachedPreparing.length > 0) {
+    updates.push(
+      admin
+        .from("orders")
+        .update({ status: "delayed" })
+        .in("id", breachedPreparing.map((o) => o.id))
+        .eq("status", "preparing")
+        .select("id"),
+    );
+  }
+  if (breachedReadyForDriver.length > 0) {
+    updates.push(
+      admin
+        .from("orders")
+        .update({ status: "delayed" })
+        .in("id", breachedReadyForDriver.map((o) => o.id))
+        .eq("status", "ready_for_driver")
+        .select("id"),
+    );
+  }
+  const updateResults = await Promise.all(updates);
+  const updateError = updateResults.find((r) => r.error)?.error;
   if (updateError) return dbErrorResponse("check-sla-breaches", updateError.message);
 
-  await Promise.all(breached.map((o) => alertManagersOrderDelayed(o.id, o.branch_id)));
+  // Only alert for orders actually flipped to 'delayed' just now - one of
+  // them may have already moved on (cancelled/delivered/etc.) in the
+  // window between the SELECT above and this UPDATE, and the per-group
+  // .eq("status", ...) guard above correctly skipped writing to it, so it
+  // must not get a "delayed" alert either.
+  const actuallyDelayedIds = new Set(updateResults.flatMap((r) => (r.data ?? []).map((row) => row.id)));
+  const actuallyDelayed = breached.filter((o) => actuallyDelayedIds.has(o.id));
+  await Promise.all(actuallyDelayed.map((o) => alertManagersOrderDelayed(o.id, o.branch_id)));
 
-  return jsonResponse({ checked, flagged: breached.length, at: nowIso });
+  return jsonResponse({ checked, flagged: actuallyDelayed.length, at: nowIso });
 });

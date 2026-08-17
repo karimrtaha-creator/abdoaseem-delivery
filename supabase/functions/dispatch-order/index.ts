@@ -10,6 +10,14 @@ import { sendPush } from "../_shared/fcm.ts";
 import { checkRateLimit } from "../_shared/rateLimit.ts";
 import { logAudit } from "../_shared/audit.ts";
 
+// Same cap manage-delivery-zone.ts and update-branch-delivery-fee.ts both
+// enforce on the analogous fee fields (security finding F-03) - this value
+// gets written verbatim as the order's canonical delivery_fee_after_tax
+// with no downstream re-validation, so without an upper bound a fat-
+// fingered or malicious dispatcher-app request could permanently corrupt
+// revenue/reporting data with an arbitrarily large fee.
+const MAX_DELIVERY_FEE = 500;
+
 serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("method not allowed", 405);
@@ -39,7 +47,9 @@ serveWithCors(async (req) => {
   if (!order_id || !driver_id || delivery_fee_after_tax == null) {
     return errorResponse("order_id, driver_id and delivery_fee_after_tax are all required");
   }
-  if (delivery_fee_after_tax <= 0) return errorResponse("delivery_fee_after_tax must be > 0");
+  if (delivery_fee_after_tax <= 0 || delivery_fee_after_tax > MAX_DELIVERY_FEE) {
+    return errorResponse(`delivery_fee_after_tax must be between 0 and ${MAX_DELIVERY_FEE}`);
+  }
 
   const admin = getAdminClient();
 

@@ -80,13 +80,17 @@ export function VoucherManagement({ profile }: { profile: Profile }) {
   }
 
   async function toggleActive(v: Voucher) {
-    await supabase.from("vouchers").update({ is_active: !v.is_active }).eq("id", v.id);
+    setError(null);
+    const { error: updateError } = await supabase.from("vouchers").update({ is_active: !v.is_active }).eq("id", v.id);
+    if (updateError) return setError(updateError.message);
     load();
   }
 
   async function remove(v: Voucher) {
     if (!confirm(`متأكد من مسح الكود "${v.code}"؟`)) return;
-    await supabase.from("vouchers").delete().eq("id", v.id);
+    setError(null);
+    const { error: deleteError } = await supabase.from("vouchers").delete().eq("id", v.id);
+    if (deleteError) return setError(deleteError.message);
     load();
   }
 
@@ -203,6 +207,7 @@ export function VoucherManagement({ profile }: { profile: Profile }) {
             {exporting ? "جاري التصدير..." : "تصدير تقرير الاستخدام (CSV)"}
           </button>
         </div>
+        {error && <p className="error-text">{error}</p>}
         {vouchers.length === 0 && <p className="muted">مفيش أكواد خصم لسه.</p>}
         {vouchers.length > 0 && (
           <table className="data-table">

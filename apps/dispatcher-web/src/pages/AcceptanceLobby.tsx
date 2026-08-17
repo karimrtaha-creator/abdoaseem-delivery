@@ -76,8 +76,17 @@ export function AcceptanceLobby() {
   // in loadAll below).
   const knownPendingIds = useRef<Set<number> | null>(null);
   const [customerCancelledIds, setCustomerCancelledIds] = useState<number[]>([]);
+  // loadAll() is triggered from three uncoordinated sources (mount, a
+  // company-wide realtime subscription, and every accept/reject/cancel) -
+  // with no ordering guarantee between overlapping calls, a slower earlier
+  // response could otherwise land after a faster later one and overwrite
+  // fresh state with stale state (e.g. an order just accepted here
+  // reappearing as pending, or a customer-cancellation alert firing off
+  // data that's already superseded).
+  const loadSeqRef = useRef(0);
 
   async function loadAll() {
+    const seq = ++loadSeqRef.current;
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
@@ -107,17 +116,40 @@ export function AcceptanceLobby() {
     // member, or the customer themselves) needs a status check to tell
     // "got accepted/rejected elsewhere" apart from "customer cancelled it" -
     // only the latter gets its own alert here.
+    let cancelledIds: number[] = [];
     if (knownPendingIds.current) {
       const freshIds = new Set(pending.map((o) => o.id));
       const disappeared = [...knownPendingIds.current].filter((id) => !freshIds.has(id));
       if (disappeared.length > 0) {
         const { data: statusRows } = await supabase.from("orders").select("id, status").in("id", disappeared);
-        const cancelled = (statusRows ?? []).filter((r) => r.status === "cancelled").map((r) => r.id);
-        if (cancelled.length > 0) {
-          playCancellationAlert();
-          setCustomerCancelledIds((prev) => [...cancelled, ...prev]);
-        }
+        cancelledIds = (statusRows ?? []).filter((r) => r.status === "cancelled").map((r) => r.id);
       }
+    }
+
+    // Line items for every order shown on this screen - team_leader used to
+    // have to accept/reject and cancel completely blind to what was
+    // actually ordered, found during an audit.
+    const orderIds = [...pending.map((o) => o.id), ...ongoing.map((o) => o.id)];
+    let byOrder = new Map<number, OrderItemRow[]>();
+    if (orderIds.length > 0) {
+      const { data: itemsData } = await supabase
+        .from("order_items")
+        .select("id, order_id, quantity, combo_selection, note, menu_items(name), combo_offers(name)")
+        .in("order_id", orderIds);
+      for (const item of (itemsData as unknown as OrderItemRow[]) ?? []) {
+        const list = byOrder.get(item.order_id) ?? [];
+        list.push(item);
+        byOrder.set(item.order_id, list);
+      }
+    }
+
+    // A newer loadAll() has since started - discard this one entirely
+    // rather than let its now-stale results overwrite fresher state.
+    if (loadSeqRef.current !== seq) return;
+
+    if (cancelledIds.length > 0) {
+      playCancellationAlert();
+      setCustomerCancelledIds((prev) => [...cancelledIds, ...prev]);
     }
     knownPendingIds.current = new Set(pending.map((o) => o.id));
 
@@ -130,27 +162,7 @@ export function AcceptanceLobby() {
       counts.set(row.branch_id, (counts.get(row.branch_id) ?? 0) + 1);
     }
     setAcceptedTodayByBranch(counts);
-
-    // Line items for every order shown on this screen - team_leader used to
-    // have to accept/reject and cancel completely blind to what was
-    // actually ordered, found during an audit.
-    const orderIds = [...pending.map((o) => o.id), ...ongoing.map((o) => o.id)];
-    if (orderIds.length > 0) {
-      const { data: itemsData } = await supabase
-        .from("order_items")
-        .select("id, order_id, quantity, combo_selection, note, menu_items(name), combo_offers(name)")
-        .in("order_id", orderIds);
-      const byOrder = new Map<number, OrderItemRow[]>();
-      for (const item of (itemsData as unknown as OrderItemRow[]) ?? []) {
-        const list = byOrder.get(item.order_id) ?? [];
-        list.push(item);
-        byOrder.set(item.order_id, list);
-      }
-      setOrderItemsByOrder(byOrder);
-    } else {
-      setOrderItemsByOrder(new Map());
-    }
-
+    setOrderItemsByOrder(byOrder);
     setLoading(false);
   }
 

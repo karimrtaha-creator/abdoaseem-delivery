@@ -4,8 +4,8 @@
 //      account skips the "cut off access immediately" ban-and-block step
 //      deactivate-user performs, so this forces deactivate-first.
 //   2. Refuses to delete a target with any order/complaint/rating history
-//      (driver_id/dispatcher_id/accepted_by/cancelled_by on orders,
-//      complaints.driver_id, order_ratings.customer_id,
+//      (customer_id/driver_id/dispatcher_id/accepted_by/cancelled_by on
+//      orders, complaints.driver_id, order_ratings.customer_id,
 //      menu_item_branch_closures.closed_by all reference public.users
 //      with ON DELETE NO ACTION) - those rows are real business records
 //      (who delivered/accepted/cancelled an order, who filed a closure)
@@ -82,7 +82,9 @@ serveWithCors(async (req) => {
     admin
       .from("orders")
       .select("id", { count: "exact", head: true })
-      .or(`driver_id.eq.${targetId},dispatcher_id.eq.${targetId},accepted_by.eq.${targetId},cancelled_by.eq.${targetId}`),
+      .or(
+        `customer_id.eq.${targetId},driver_id.eq.${targetId},dispatcher_id.eq.${targetId},accepted_by.eq.${targetId},cancelled_by.eq.${targetId}`,
+      ),
     admin.from("complaints").select("id", { count: "exact", head: true }).eq("driver_id", targetId),
     admin.from("order_ratings").select("id", { count: "exact", head: true }).eq("customer_id", targetId),
     admin.from("menu_item_branch_closures").select("menu_item_id", { count: "exact", head: true }).eq("closed_by", targetId),
