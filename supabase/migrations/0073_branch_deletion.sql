@@ -1,0 +1,13 @@
+-- Karim wants a delete button for branches (already has one for delivery
+-- zones, manage-delivery-zone/0024). branches never had an is_active
+-- concept before - is_delivery_available means something different
+-- ("this open branch does dine-in/takeaway only, not delivery"), so a
+-- closed/removed branch needs its own flag. Every FK pointing at
+-- branches.id is ON DELETE NO ACTION except the two branch-closure join
+-- tables (menu_item_branch_closures, combo_offer_branch_closures, both
+-- CASCADE - harmless, just "this item/combo is closed at this branch"
+-- rows) and audit_log (SET NULL) - so a hard DELETE is safe to attempt
+-- outright and will cleanly fail with 23503 if any real orders/staff/
+-- addresses/zones still reference the branch, exactly like
+-- manage-delivery-zone's own delete already does.
+alter table public.branches add column is_active boolean not null default true;

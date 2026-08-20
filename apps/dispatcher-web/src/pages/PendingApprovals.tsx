@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
 import type { Profile } from "../lib/useProfile";
+import { callFunction } from "../lib/callFunction";
 
 interface StaffRequest {
   id: number;
@@ -36,16 +37,6 @@ const ROLE_LABELS: Record<string, string> = {
   call_center: "Agent",
 };
 
-async function callFunction<T>(name: string, body: unknown): Promise<T> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
-  const { data, error } = await supabase.functions.invoke(name, {
-    body: body as any,
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
-  if (error) throw new Error(error.message);
-  return data as T;
-}
 
 export function PendingApprovals({ profile: _profile }: { profile: Profile }) {
   const [requests, setRequests] = useState<StaffRequest[]>([]);

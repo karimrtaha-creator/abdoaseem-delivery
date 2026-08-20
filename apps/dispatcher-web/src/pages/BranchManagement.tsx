@@ -2,12 +2,14 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { supabase } from "../supabaseClient";
 import { CHART_COLORS } from "../lib/chartColors";
+import { callFunction } from "../lib/callFunction";
 
 interface Branch {
   id: number;
   name: string;
   region_id: number | null;
   is_delivery_available: boolean;
+  is_active: boolean;
   delivery_fee: number;
   photo_url: string | null;
   address: string | null;
@@ -93,16 +95,6 @@ interface StaffUser {
   region_id: number | null;
 }
 
-async function callFunction<T>(name: string, body: unknown): Promise<T> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
-  const { data, error } = await supabase.functions.invoke(name, {
-    body: body as any,
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
-  if (error) throw new Error(error.message);
-  return data as T;
-}
 
 export function BranchManagement() {
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -137,7 +129,7 @@ export function BranchManagement() {
       return d.toISOString();
     })();
     const [branchesRes, regionsRes, staffRes, zonesRes, ordersRes] = await Promise.all([
-      supabase.from("branches").select("id, name, region_id, is_delivery_available, delivery_fee, photo_url, address").order("name"),
+      supabase.from("branches").select("id, name, region_id, is_delivery_available, is_active, delivery_fee, photo_url, address").order("name"),
       supabase.from("regions").select("id, name").order("name"),
       supabase.from("users").select("id, name, phone, role, branch_id, region_id").neq("role", "customer").order("name"),
       // Karim's 2026-08-13 correction: delivery_zones (per-branch,
@@ -308,6 +300,28 @@ export function BranchManagement() {
     setBusyKey(null);
     if (updateError) return setError(updateError.message);
     load();
+  }
+
+  async function deleteBranch(branch: Branch) {
+    if (!confirm(`متأكد إنك عايز تمسح فرع "${branch.name}"؟`)) return;
+    setBusyKey(`branch-delete-${branch.id}`);
+    setError(null);
+    setInfo(null);
+    try {
+      const res = await callFunction<{ deleted: boolean; soft_deleted: boolean }>("delete-branch", {
+        branch_id: branch.id,
+      });
+      setInfo(
+        res.soft_deleted
+          ? `"${branch.name}" ليه أوردرات/موظفين/عناوين مرتبطة بيه - مينفعش يتمسح نهائي، فاتقفل بدل ما يتمسح (مش هيظهر تاني في اختيار الفروع).`
+          : `"${branch.name}" اتمسح نهائي.`,
+      );
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "فشل مسح الفرع");
+    } finally {
+      setBusyKey(null);
+    }
   }
 
   async function saveFee(branch: Branch) {
@@ -643,8 +657,11 @@ export function BranchManagement() {
                 const activeZoneCount = branchZones.filter((z) => z.is_active).length;
                 return (
                   <Fragment key={b.id}>
-                    <tr>
-                      <td>{b.name}</td>
+                    <tr style={!b.is_active ? { opacity: 0.55 } : undefined}>
+                      <td>
+                        {b.name}
+                        {!b.is_active && <span className="muted"> (مقفول)</span>}
+                      </td>
                       <td>
                         <span className={b.is_delivery_available ? "badge-active" : "badge-inactive"}>
                           {b.is_delivery_available ? "🟢 التوصيل متاح" : "🔴 استلام من الفرع بس"}
@@ -771,6 +788,18 @@ export function BranchManagement() {
                                     حفظ
                                   </button>
                                 </div>
+                              </div>
+
+                              <div>
+                                <p className="muted" style={{ margin: "0 0 6px" }}>مسح الفرع</p>
+                                <button
+                                  className="btn-sm btn-link"
+                                  style={{ color: "var(--danger)" }}
+                                  disabled={busyKey === `branch-delete-${b.id}`}
+                                  onClick={() => deleteBranch(b)}
+                                >
+                                  حذف نهائي
+                                </button>
                               </div>
                             </div>
 

@@ -729,6 +729,37 @@ button, input, select { font-family: var(--font-body); }
 .checkout-line-wrap { border-bottom: 1px solid var(--color-border); padding-bottom: var(--space-1); }
 .checkout-line-wrap:last-of-type { border-bottom: none; }
 .checkout-line-choices { font-size: 0.8rem; margin-top: -4px; }
+.checkout-cart-header { display: flex; align-items: center; justify-content: space-between; }
+.checkout-text-btn {
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  color: var(--color-tomato);
+  cursor: pointer;
+}
+.checkout-text-btn-danger { color: var(--color-alert); }
+.checkout-line-qty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: 4px;
+}
+.checkout-line-qty span { min-width: 1.5em; text-align: center; font-weight: 600; }
+.checkout-qty-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--color-tomato);
+  background: transparent;
+  color: var(--color-tomato);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.checkout-qty-btn:hover { background: var(--color-tomato-tint); }
+.checkout-qty-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .checkout-line-note {
   width: 100%;
   font-size: 0.82rem;

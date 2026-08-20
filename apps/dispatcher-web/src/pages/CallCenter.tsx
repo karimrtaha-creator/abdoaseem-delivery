@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
+import { callFunction } from "../lib/callFunction";
 
 interface Branch {
   id: number;
@@ -63,32 +64,6 @@ interface Address {
 }
 
 const emptyAddress: Address = { building: "", floor: "", apartment: "", area: "" };
-
-async function callFunction<T>(name: string, body: unknown): Promise<T> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
-  const { data, error } = await supabase.functions.invoke(name, {
-    body: body as any,
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
-  if (error) {
-    // FunctionsHttpError.message is a generic "non-2xx status code" string -
-    // the actual server error text only lives in the raw response body via
-    // .context, same as Checkout.tsx's translateServerError path.
-    let serverMessage: string | null = null;
-    const context = (error as { context?: Response }).context;
-    if (context) {
-      try {
-        const responseBody = await context.clone().json();
-        if (typeof responseBody?.error === "string") serverMessage = responseBody.error;
-      } catch {
-        // response body wasn't JSON - fall through to the generic message
-      }
-    }
-    throw new Error(serverMessage ?? error.message);
-  }
-  return data as T;
-}
 
 function branchMatchesArea(branch: Branch, area: string): boolean {
   if (!area.trim() || !Array.isArray(branch.areas_covered)) return false;

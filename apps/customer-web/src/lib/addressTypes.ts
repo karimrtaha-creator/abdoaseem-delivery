@@ -28,6 +28,7 @@ export interface Branch {
   name: string;
   region_id: number;
   is_delivery_available?: boolean;
+  is_active?: boolean;
   delivery_fallback_branch_id?: number | null;
   delivery_fee?: number;
 }

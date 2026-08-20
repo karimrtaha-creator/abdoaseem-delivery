@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
 import type { Profile } from "../lib/useProfile";
+import { callFunction } from "../lib/callFunction";
 
 interface StaffUser {
   id: string;
@@ -46,17 +47,6 @@ function creatableRolesFor(callerRole: string): string[] {
   if (callerRole === "regional_manager") return ["branch_manager", "dispatcher", "driver"];
   if (callerRole === "branch_manager") return ["dispatcher", "driver"];
   return [];
-}
-
-async function callFunction<T>(name: string, body: unknown): Promise<T> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
-  const { data, error } = await supabase.functions.invoke(name, {
-    body: body as any,
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
-  if (error) throw new Error(error.message);
-  return data as T;
 }
 
 export function UserManagement({ profile }: { profile: Profile }) {

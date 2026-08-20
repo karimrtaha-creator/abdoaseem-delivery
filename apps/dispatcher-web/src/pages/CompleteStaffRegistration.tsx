@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
+import { callFunction } from "../lib/callFunction";
 
 interface StaffRequest {
   id: number;
@@ -40,16 +41,6 @@ const BRANCH_SCOPED_ROLES = ["driver", "dispatcher", "branch_manager"];
 const REGION_SCOPED_ROLES = ["regional_manager"];
 const ALL_ROLES = Object.keys(ROLE_LABELS);
 
-async function callFunction<T>(name: string, body: unknown): Promise<T> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
-  const { data, error } = await supabase.functions.invoke(name, {
-    body: body as any,
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
-  if (error) throw new Error(error.message);
-  return data as T;
-}
 
 export function CompleteStaffRegistration({ userId }: { userId: string }) {
   const [loading, setLoading] = useState(true);

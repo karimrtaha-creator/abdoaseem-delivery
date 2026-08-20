@@ -22,7 +22,9 @@ export function Branches() {
 
   useEffect(() => {
     Promise.all([
-      supabase.from("branches").select("id, name, region_id, address, photo_url").order("name"),
+      // Closed branches (is_active=false, see 0073) never belonged in a
+      // "here's where we are" listing - filtered out at the query itself.
+      supabase.from("branches").select("id, name, region_id, address, photo_url").eq("is_active", true).order("name"),
       supabase.from("regions").select("id, name").order("name"),
     ]).then(([branchesRes, regionsRes]) => {
       if (branchesRes.error) {

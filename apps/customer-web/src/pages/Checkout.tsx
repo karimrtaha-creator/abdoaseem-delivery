@@ -332,20 +332,51 @@ export function Checkout() {
       <h1>استكمال الطلب</h1>
 
       <div className="card" style={{ marginTop: "var(--space-4)" }}>
-        <h2 className="section-title" style={{ fontSize: "1.3rem" }}>
-          طلبك
-        </h2>
+        <div className="checkout-cart-header">
+          <h2 className="section-title" style={{ fontSize: "1.3rem", margin: 0 }}>
+            طلبك
+          </h2>
+          <button type="button" className="checkout-text-btn checkout-text-btn-danger" onClick={() => cart.clear()}>
+            امسح السلة
+          </button>
+        </div>
         {cart.lines.map((line) => (
           <div key={line.key} className="checkout-line-wrap">
             <div className="checkout-line">
-              <span>
-                {line.name} × {line.quantity}
-              </span>
+              <span>{line.name}</span>
               <span>{line.unit_price * line.quantity} ج</span>
             </div>
             {line.comboChoiceLabels && line.comboChoiceLabels.length > 0 && (
               <p className="muted checkout-line-choices">{line.comboChoiceLabels.join(" - ")}</p>
             )}
+            <div className="checkout-line-qty">
+              <button
+                type="button"
+                className="checkout-qty-btn"
+                aria-label="نقص العدد"
+                onClick={() => cart.changeQuantity(line.key, -1)}
+              >
+                −
+              </button>
+              <span>{line.quantity}</span>
+              <button
+                type="button"
+                className="checkout-qty-btn"
+                aria-label="زود العدد"
+                disabled={line.quantity >= 20}
+                onClick={() => cart.changeQuantity(line.key, 1)}
+              >
+                +
+              </button>
+              <button
+                type="button"
+                className="checkout-text-btn checkout-text-btn-danger"
+                style={{ marginRight: "auto" }}
+                onClick={() => cart.changeQuantity(line.key, -line.quantity)}
+              >
+                حذف
+              </button>
+            </div>
             <input
               className="checkout-line-note"
               placeholder="ملاحظة على الصنف ده (اختياري) - زي: من غير تقلية"

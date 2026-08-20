@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { playNewOrderChime, playCancellationAlert } from "../lib/alertSound";
+import { callFunction } from "../lib/callFunction";
 
 // How often the "new pending order" alarm repeats while anything is still
 // waiting - matches Dispatch.tsx's own CHIME_REPEAT_MS.
@@ -40,16 +41,6 @@ interface OrderItemRow {
 
 const STAFF_CANCELLABLE_STATUSES = ["preparing", "out_for_delivery", "delayed"];
 
-async function callFunction<T>(name: string, body: unknown): Promise<T> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
-  const { data, error } = await supabase.functions.invoke(name, {
-    body: body as any,
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
-  if (error) throw new Error(error.message);
-  return data as T;
-}
 
 const STATUS_LABELS: Record<string, string> = {
   preparing: "جاري التحضير",

@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
 import type { Profile } from "../lib/useProfile";
+import { callFunction } from "../lib/callFunction";
 
 export function BusinessHours({ profile }: { profile: Profile }) {
   return (
@@ -98,16 +99,6 @@ interface PromoVideo {
   created_at: string;
 }
 
-async function callFunction<T>(name: string, body: unknown): Promise<T> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
-  const { data, error } = await supabase.functions.invoke(name, {
-    body: body as any,
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
-  if (error) throw new Error(error.message);
-  return data as T;
-}
 
 // Heading still lives on the site_settings singleton (0063); the videos
 // themselves are now a list (0067) - add as many Facebook links as

@@ -64,7 +64,7 @@ export function Addresses() {
     if (!session) return;
     Promise.all([
       supabase.from("regions").select("id, name").order("name"),
-      supabase.from("branches").select("id, name, region_id").order("name"),
+      supabase.from("branches").select("id, name, region_id, is_active").order("name"),
       supabase.from("customer_addresses").select("*").order("created_at", { ascending: false }),
     ]).then(([regionsRes, branchesRes, addressesRes]) => {
       setRegions((regionsRes.data as Region[]) ?? []);
@@ -263,9 +263,14 @@ export function Addresses() {
     setAddresses((prev) => prev.filter((a) => a.id !== id));
   }
 
+  // Closed branches (is_active=false) are excluded from the picker for a
+  // NEW/edited address - `branches` itself stays unfiltered so an existing
+  // address already pointing at a since-closed branch still displays its
+  // real name via formatAddressSummary instead of falling back to "فرع #N".
+  const selectableBranches = branches.filter((b) => b.is_active !== false);
   const branchesInRegion = form.main_region_id
-    ? branches.filter((b) => b.region_id === Number(form.main_region_id))
-    : branches;
+    ? selectableBranches.filter((b) => b.region_id === Number(form.main_region_id))
+    : selectableBranches;
 
   if (authLoading || loading) {
     return (
