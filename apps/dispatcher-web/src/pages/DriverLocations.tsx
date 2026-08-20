@@ -30,6 +30,11 @@ interface ActiveOrder {
   status: string;
 }
 
+interface BranchLite {
+  id: number;
+  name: string;
+}
+
 const driverIcon = new DivIcon({
   className: "driver-marker",
   html: `<div style="background:#1E6B52;width:16px;height:16px;border-radius:50%;border:3px solid white;box-shadow:0 0 4px rgba(0,0,0,0.4)"></div>`,
@@ -45,11 +50,17 @@ const driverIcon = new DivIcon({
 export function DriverLocations(_props: { profile: Profile }) {
   const [drivers, setDrivers] = useState<DriverLocation[]>([]);
   const [activeOrders, setActiveOrders] = useState<ActiveOrder[]>([]);
+  const [branches, setBranches] = useState<BranchLite[]>([]);
   const [loading, setLoading] = useState(true);
+  // Karim's request (2026-08-21): with drivers spread across 13 branches,
+  // the unfiltered map got cluttered fast - a branch filter and a
+  // name search narrow it down to "just what I'm looking for".
+  const [branchFilter, setBranchFilter] = useState<number | "all">("all");
+  const [nameSearch, setNameSearch] = useState("");
 
   async function load() {
     const staleThreshold = new Date(Date.now() - STALE_AFTER_MINUTES * 60_000).toISOString();
-    const [driversRes, ordersRes] = await Promise.all([
+    const [driversRes, ordersRes, branchesRes] = await Promise.all([
       supabase
         .from("users")
         .select("id, name, current_lat, current_lng, location_updated_at, branch_id")
@@ -62,9 +73,11 @@ export function DriverLocations(_props: { profile: Profile }) {
         .select("id, pos_order_id, driver_id, status")
         .in("status", ["out_for_delivery", "delayed"])
         .not("driver_id", "is", null),
+      supabase.from("branches").select("id, name").order("name"),
     ]);
     setDrivers((driversRes.data as DriverLocation[]) ?? []);
     setActiveOrders((ordersRes.data as ActiveOrder[]) ?? []);
+    setBranches((branchesRes.data as BranchLite[]) ?? []);
     setLoading(false);
   }
 
@@ -101,10 +114,24 @@ export function DriverLocations(_props: { profile: Profile }) {
     return map;
   }, [activeOrders]);
 
+  const branchName = useMemo(() => {
+    const map = new Map(branches.map((b) => [b.id, b.name]));
+    return (id: number | null) => (id ? map.get(id) ?? `فرع #${id}` : "بدون فرع");
+  }, [branches]);
+
+  const visibleDrivers = useMemo(() => {
+    const search = nameSearch.trim().toLowerCase();
+    return drivers.filter((d) => {
+      if (branchFilter !== "all" && d.branch_id !== branchFilter) return false;
+      if (search && !d.name.toLowerCase().includes(search)) return false;
+      return true;
+    });
+  }, [drivers, branchFilter, nameSearch]);
+
   const bounds = useMemo(() => {
-    if (drivers.length === 0) return null;
-    return new LatLngBounds(drivers.map((d) => [d.current_lat, d.current_lng] as [number, number]));
-  }, [drivers]);
+    if (visibleDrivers.length === 0) return null;
+    return new LatLngBounds(visibleDrivers.map((d) => [d.current_lat, d.current_lng] as [number, number]));
+  }, [visibleDrivers]);
 
   if (loading) return <p className="muted">جاري التحميل...</p>;
 
@@ -113,10 +140,27 @@ export function DriverLocations(_props: { profile: Profile }) {
       <div className="card">
         <p>
           طيارين ماشيين يوصّلوا دلوقتي: <strong>{drivers.length}</strong>
+          {(branchFilter !== "all" || nameSearch.trim()) && <span className="muted"> (ظاهر منهم {visibleDrivers.length})</span>}
         </p>
         {drivers.length === 0 && (
           <p className="muted">مفيش طيار شايل أوردر معاه إذن الموقع مفعّل دلوقتي.</p>
         )}
+        <div className="inline-row" style={{ marginTop: "var(--space-2)" }}>
+          <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value === "all" ? "all" : Number(e.target.value))}>
+            <option value="all">كل الفروع</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          <input
+            type="text"
+            placeholder="دوّر باسم الطيار"
+            value={nameSearch}
+            onChange={(e) => setNameSearch(e.target.value)}
+          />
+        </div>
       </div>
 
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -130,12 +174,14 @@ export function DriverLocations(_props: { profile: Profile }) {
             url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution="&copy; OpenStreetMap contributors"
           />
-          {drivers.map((d) => {
+          {visibleDrivers.map((d) => {
             const order = orderByDriver.get(d.id);
             return (
               <Marker key={d.id} position={[d.current_lat, d.current_lng]} icon={driverIcon}>
                 <Popup>
                   <strong>{d.name}</strong>
+                  <br />
+                  <span className="muted">{branchName(d.branch_id)}</span>
                   <br />
                   {order ? `أوردر #${order.pos_order_id ?? order.id}` : "من غير أوردر مرتبط حاليًا"}
                   <br />
