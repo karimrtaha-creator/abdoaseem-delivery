@@ -133,7 +133,21 @@ serveWithCors(async (req) => {
   });
   if (authError || !authUser?.user) {
     const msg = authError?.message ?? "unknown error";
-    if (msg.toLowerCase().includes("already been registered") || msg.toLowerCase().includes("already exists")) {
+    // Live-confirmed 2026-08-20: for this project's Supabase Auth config,
+    // a duplicate email/phone doesn't always come back as "already
+    // registered"/"already exists" - it can surface as the generic
+    // "Database error creating new user" (the underlying unique-constraint
+    // violation on auth.users, wrapped by GoTrue into a message with no
+    // specific reason in it). Since createUser() is only ever called here
+    // with a phone-derived synthetic email, and phone is the only unique
+    // field being inserted, a duplicate is overwhelmingly the real cause
+    // any time creation fails at all - checked first as the friendlier,
+    // actionable message before falling back to the raw error.
+    if (
+      msg.toLowerCase().includes("already been registered") ||
+      msg.toLowerCase().includes("already exists") ||
+      msg.toLowerCase().includes("database error")
+    ) {
       return errorResponse("this phone number is already registered to an account", 409);
     }
     return errorResponse(`failed to create account: ${msg}`, 500);
