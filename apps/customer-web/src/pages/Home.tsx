@@ -111,7 +111,7 @@ export function Home() {
 
         {promoVideos.length > 0 && (
           <section className="section" style={{ paddingBlock: "var(--space-4)" }}>
-            <h2 className="section-title">{promoVideoHeading}</h2>
+            <h2 className="section-title" style={{ textAlign: "center" }}>{promoVideoHeading}</h2>
             <div className="promo-video-list">
               {promoVideos.map((v) =>
                 isUploadedVideoFile(v.video_url) ? (
