@@ -63,7 +63,7 @@ export function Addresses() {
   useEffect(() => {
     if (!session) return;
     Promise.all([
-      supabase.from("regions").select("id, name").order("name"),
+      supabase.from("regions").select("id, name, is_active").order("name"),
       supabase.from("branches").select("id, name, region_id, is_active").order("name"),
       supabase.from("customer_addresses").select("*").order("created_at", { ascending: false }),
     ]).then(([regionsRes, branchesRes, addressesRes]) => {
@@ -370,7 +370,7 @@ export function Addresses() {
                 onChange={(e) => setForm({ ...form, main_region_id: e.target.value, nearest_branch_id: "" })}
               >
                 <option value="">اختار المنطقة</option>
-                {regions.map((r) => (
+                {regions.filter((r) => r.is_active !== false).map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name}
                   </option>

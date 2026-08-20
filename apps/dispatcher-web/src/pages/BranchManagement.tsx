@@ -84,6 +84,7 @@ const STATUS_LABELS: Record<string, string> = {
 interface Region {
   id: number;
   name: string;
+  is_active: boolean;
 }
 
 interface StaffUser {
@@ -130,7 +131,7 @@ export function BranchManagement() {
     })();
     const [branchesRes, regionsRes, staffRes, zonesRes, ordersRes] = await Promise.all([
       supabase.from("branches").select("id, name, region_id, is_delivery_available, is_active, delivery_fee, photo_url, address").order("name"),
-      supabase.from("regions").select("id, name").order("name"),
+      supabase.from("regions").select("id, name, is_active").order("name"),
       supabase.from("users").select("id, name, phone, role, branch_id, region_id").neq("role", "customer").order("name"),
       // Karim's 2026-08-13 correction: delivery_zones (per-branch,
       // per-zone fees) is the real pricing model, branches.delivery_fee is
@@ -288,6 +289,28 @@ export function BranchManagement() {
     if (insertError) return setError(insertError.message);
     setNewRegionName("");
     load();
+  }
+
+  async function deleteRegion(region: Region) {
+    if (!confirm(`متأكد إنك عايز تمسح منطقة "${region.name}"؟`)) return;
+    setBusyKey(`region-delete-${region.id}`);
+    setError(null);
+    setInfo(null);
+    try {
+      const res = await callFunction<{ deleted: boolean; soft_deleted: boolean }>("delete-region", {
+        region_id: region.id,
+      });
+      setInfo(
+        res.soft_deleted
+          ? `"${region.name}" ليها فروع/موظفين/عناوين مرتبطة بيها - مينفعش تتمسح نهائي، فاتقفلت بدل ما تتمسح.`
+          : `"${region.name}" اتمسحت نهائي.`,
+      );
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "فشل مسح المنطقة");
+    } finally {
+      setBusyKey(null);
+    }
   }
 
   async function toggleDelivery(branch: Branch) {
@@ -587,14 +610,18 @@ export function BranchManagement() {
                 <th>المنطقة</th>
                 <th>مدير المنطقة</th>
                 <th>تعيين مدير</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
               {regions.map((r) => {
                 const manager = regionManagerOf.get(r.id);
                 return (
-                  <tr key={r.id}>
-                    <td>{r.name}</td>
+                  <tr key={r.id} style={!r.is_active ? { opacity: 0.55 } : undefined}>
+                    <td>
+                      {r.name}
+                      {!r.is_active && <span className="muted"> (مقفولة)</span>}
+                    </td>
                     <td className={manager ? undefined : "muted"}>{manager ? manager.name : "مفيش مدير معيّن"}</td>
                     <td>
                       <div className="actions-cell">
@@ -617,6 +644,16 @@ export function BranchManagement() {
                           تعيين
                         </button>
                       </div>
+                    </td>
+                    <td>
+                      <button
+                        className="btn-sm btn-link"
+                        style={{ color: "var(--danger)" }}
+                        disabled={busyKey === `region-delete-${r.id}`}
+                        onClick={() => deleteRegion(r)}
+                      >
+                        حذف
+                      </button>
                     </td>
                   </tr>
                 );

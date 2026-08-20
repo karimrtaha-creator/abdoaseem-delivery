@@ -21,6 +21,7 @@ export interface CustomerAddress {
 export interface Region {
   id: number;
   name: string;
+  is_active?: boolean;
 }
 
 export interface Branch {
