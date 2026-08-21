@@ -103,7 +103,15 @@ body {
 .sidebar-footer .btn-link { color: rgba(251, 243, 228, 0.75); }
 .sidebar-footer .btn-link:hover { color: var(--color-rice); }
 
-.content { flex: 1; min-width: 0; padding: var(--space-4); max-width: 1400px; position: relative; }
+/* overflow: hidden clips any inactive .tab-panel that's taller than the
+   active one - without it, every kept-mounted tab (see .tab-panel below)
+   stretched the whole page's scrollable area to match whichever tab had
+   the most content, so a short/empty tab would scroll on for thousands of
+   blank pixels past its own real content (2026-08-21 report: "كل الصفحات
+   ملهاش نهاية بتنزل حتى لو مفيش بيانات"). Doesn't affect recharts'
+   ResponsiveContainer width measurement in hidden tabs - clientWidth is
+   unaffected by an ancestor's overflow. */
+.content { flex: 1; min-width: 0; padding: var(--space-4); max-width: 1400px; position: relative; overflow: hidden; }
 
 /* Inactive tabs stay visibility:hidden (not display:none) and positioned
    out of flow, so they keep a real, measurable layout box instead of
