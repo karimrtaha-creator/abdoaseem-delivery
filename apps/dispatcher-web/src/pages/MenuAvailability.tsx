@@ -30,7 +30,10 @@ interface ComboClosure {
   branch_id: number;
 }
 
-export function MenuAvailability({ profile }: { profile: Profile }) {
+// profile isn't used for client-side scoping anymore - see myBranches'
+// comment above. Kept in the signature only so this screen matches every
+// other tab's ScreenFor(tab, profile) call shape.
+export function MenuAvailability({ profile: _profile }: { profile: Profile }) {
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -67,16 +70,12 @@ export function MenuAvailability({ profile }: { profile: Profile }) {
     load();
   }, []);
 
-  const myBranches = useMemo(() => {
-    // team_leader added 2026-08-11 - same unrestricted breadth as
-    // general_manager here, matching their company-wide order visibility
-    // elsewhere (RLS on menu_item_branch_closures already grants this,
-    // not just the UI).
-    if (profile.role === "general_manager" || profile.role === "team_leader") return branches;
-    if (profile.role === "regional_manager") return branches.filter((b) => b.region_id === profile.region_id);
-    if (profile.role === "branch_manager") return branches.filter((b) => b.id === profile.branch_id);
-    return [];
-  }, [branches, profile]);
+  // branch_manager/regional_manager retired as roles (2026-08-21, Karim's
+  // request) - this screen is only ever reached by general_manager/
+  // team_leader now (see TABS_BY_ROLE), both with the same unrestricted
+  // breadth here, matching their company-wide order visibility elsewhere
+  // (RLS on menu_item_branch_closures already grants this, not just the UI).
+  const myBranches = branches;
 
   useEffect(() => {
     if (myBranches.length > 0 && selectedBranchId === null) {

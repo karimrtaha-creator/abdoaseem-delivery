@@ -8,22 +8,13 @@
 // creating the auth account - the same pattern already proven in
 // create-order for guest customers.
 //
-// Authorization matrix (enforced here, not just in RLS - hiding a role
-// option from a screen is not a security control):
-//   general_manager  -> any role, any branch/region
-//   regional_manager -> branch_manager / dispatcher / driver, only within
-//                        their own region
-//   branch_manager   -> dispatcher / driver, only within their own branch
-//
-// call_center and team_leader are deliberately reachable by
-// general_manager ONLY - they're central roles not tied to a branch or
-// region, so neither regional_manager nor branch_manager (whose whole
-// authority is branch/region-scoped) can ever create one. This is not an
-// oversight; it's the intended design.
+// general_manager only, since 2026-08-21 - branch_manager/regional_manager
+// were retired as roles (see roleScopes.ts), and they were the only other
+// two roles this function ever let create an account.
 import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
 import { getAdminClient, getCaller, AppRole } from "../_shared/auth.ts";
 import { logAudit } from "../_shared/audit.ts";
-import { BRANCH_SCOPED_ROLES, REGION_SCOPED_ROLES, ALL_STAFF_ROLES } from "../_shared/roleScopes.ts";
+import { BRANCH_SCOPED_ROLES, ALL_STAFF_ROLES } from "../_shared/roleScopes.ts";
 
 const STAFF_EMAIL_DOMAIN = "abdoaseem.internal"; // same convention as apps/dispatcher-web + driver_app logins
 
@@ -48,8 +39,8 @@ serveWithCors(async (req) => {
 
   const caller = await getCaller(req);
   if (!caller || !caller.is_active) return errorResponse("unauthorized", 401);
-  if (!["general_manager", "regional_manager", "branch_manager"].includes(caller.role)) {
-    return errorResponse("only general_manager/regional_manager/branch_manager can create users", 403);
+  if (caller.role !== "general_manager") {
+    return errorResponse("only general_manager can create users", 403);
   }
 
   let body: CreateUserBody;
@@ -74,53 +65,15 @@ serveWithCors(async (req) => {
   let resolvedBranchId: number | null = null;
   let resolvedRegionId: number | null = null;
 
-  if (caller.role === "general_manager") {
-    if (BRANCH_SCOPED_ROLES.includes(role)) {
-      if (!body.branch_id) return errorResponse("branch_id is required for this role");
-      const { data: branch } = await admin.from("branches").select("id").eq("id", body.branch_id).maybeSingle();
-      if (!branch) return errorResponse("branch not found", 404);
-      resolvedBranchId = body.branch_id;
-    } else if (REGION_SCOPED_ROLES.includes(role)) {
-      if (!body.region_id) return errorResponse("region_id is required for this role");
-      const { data: region } = await admin.from("regions").select("id").eq("id", body.region_id).maybeSingle();
-      if (!region) return errorResponse("region not found", 404);
-      resolvedRegionId = body.region_id;
-    }
-    // CENTRAL_ROLES: resolvedBranchId/resolvedRegionId stay null regardless
-    // of anything passed in the body - general_manager/team_leader/
-    // call_center are never branch- or region-tied.
-  } else if (caller.role === "regional_manager") {
-    if (!["branch_manager", "dispatcher", "driver"].includes(role)) {
-      return errorResponse(
-        "regional_manager can only create branch_manager, dispatcher, or driver accounts",
-        403,
-      );
-    }
-    if (!body.branch_id) return errorResponse("branch_id is required");
-    const { data: branch } = await admin
-      .from("branches")
-      .select("id, region_id")
-      .eq("id", body.branch_id)
-      .maybeSingle();
+  if (BRANCH_SCOPED_ROLES.includes(role)) {
+    if (!body.branch_id) return errorResponse("branch_id is required for this role");
+    const { data: branch } = await admin.from("branches").select("id").eq("id", body.branch_id).maybeSingle();
     if (!branch) return errorResponse("branch not found", 404);
-    if (branch.region_id !== caller.region_id) {
-      return errorResponse("that branch is not in your region", 403);
-    }
     resolvedBranchId = body.branch_id;
-  } else {
-    // branch_manager
-    if (!["dispatcher", "driver"].includes(role)) {
-      return errorResponse("branch_manager can only create dispatcher or driver accounts", 403);
-    }
-    // A branch_manager displaced by assign-manager keeps their role and
-    // stays active, but branch_id is nulled out (see assign-manager) - such
-    // an account has no "my branch only" left to scope this to, so it must
-    // be rejected rather than silently creating an unscoped staff account.
-    if (!caller.branch_id) return errorResponse("your account has no branch assigned - contact a general manager", 403);
-    // Forced to the caller's own branch - never trust a client-supplied
-    // branch_id for a role whose whole authority is "my branch only".
-    resolvedBranchId = caller.branch_id;
   }
+  // CENTRAL_ROLES (general_manager/team_leader/call_center): resolvedBranchId/
+  // resolvedRegionId stay null regardless of anything passed in the body -
+  // never branch- or region-tied.
 
   const email = `${phone}@${STAFF_EMAIL_DOMAIN}`;
   const password = generatePassword();

@@ -27,11 +27,11 @@ interface Region {
   name: string;
 }
 
+// branch_manager/regional_manager retired as roles (2026-08-21, Karim's
+// request) - no longer requestable, so dropped from this label map.
 const ROLE_LABELS: Record<string, string> = {
   driver: "طيار",
   dispatcher: "ديسباتشر",
-  branch_manager: "مدير فرع",
-  regional_manager: "مدير منطقة",
   general_manager: "مدير عام",
   team_leader: "تيم ليدر",
   call_center: "Agent",
@@ -49,10 +49,11 @@ export function PendingApprovals({ profile: _profile }: { profile: Profile }) {
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    // RLS already scopes this to whatever the caller's role/branch/region
-    // is allowed to see (general_manager: all, regional_manager: own
-    // region, branch_manager: own branch) - no client-side filtering
-    // needed for correctness, same principle as everywhere else in this app.
+    // RLS already scopes this to whatever the caller's role is allowed to
+    // see (general_manager: everything; dispatcher: driver requests for
+    // their own branch only; team_leader: call_center/Agent requests only
+    // - see 0075) - no client-side filtering needed for correctness, same
+    // principle as everywhere else in this app.
     const { data } = await supabase
       .from("staff_registration_requests")
       .select("*")

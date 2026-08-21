@@ -40,8 +40,6 @@ const ROLE_TITLES: Record<string, string> = {
   call_center: "Agent", // renamed from "كول سنتر" 2026-08-11 - same role (order_source scoping unchanged), new label + widened job (see AcceptanceLobby)
   team_leader: "تيم ليدر",
   general_manager: "مدير عام",
-  regional_manager: "مدير منطقة",
-  branch_manager: "مدير فرع",
 };
 
 // Which tabs each role gets, in order. Purely a navigation/UX list - every
@@ -72,6 +70,11 @@ const TABS_BY_ROLE: Record<string, { key: TabKey; label: string }[]> = {
     { key: "driver_map", label: "مواقع الطيارين" },
     { key: "menu_availability", label: "إقفال الأصناف" },
     { key: "business_hours", label: "مواعيد العمل" },
+    // Karim's request (2026-08-21): team_leader can now review pending
+    // call_center (Agent) staff-registration requests specifically -
+    // approve-staff-registration/RLS (0075) enforce that this only ever
+    // lets them act on that one request type, not any other.
+    { key: "staff_requests", label: "طلبات تسجيل الـAgent" },
   ],
   general_manager: [
     { key: "dashboard", label: "لوحة المتابعة" },
@@ -88,22 +91,10 @@ const TABS_BY_ROLE: Record<string, { key: TabKey; label: string }[]> = {
     { key: "vouchers", label: "أكواد الخصم" },
     { key: "location_log", label: "سجل تعديلات المواقع" },
   ],
-  regional_manager: [
-    { key: "dashboard", label: "لوحة المتابعة" },
-    { key: "performance", label: "أداء الطيارين" },
-    { key: "complaints", label: "الشكاوى" },
-    { key: "staff_requests", label: "طلبات التسجيل" },
-    { key: "users", label: "إدارة المستخدمين" },
-    { key: "menu_availability", label: "إقفال الأصناف" },
-  ],
-  branch_manager: [
-    { key: "dashboard", label: "لوحة المتابعة" },
-    { key: "performance", label: "أداء الطيارين" },
-    { key: "complaints", label: "الشكاوى" },
-    { key: "staff_requests", label: "طلبات التسجيل" },
-    { key: "users", label: "إدارة المستخدمين" },
-    { key: "menu_availability", label: "إقفال الأصناف" },
-  ],
+  // branch_manager/regional_manager retired as roles (2026-08-21, Karim's
+  // request) - general_manager now handles everything those two used to
+  // cover company-wide, alongside dispatcher/team_leader's new narrow
+  // staff-registration review authority above.
 };
 
 function ScreenFor({ tab, profile }: { tab: TabKey; profile: Profile }) {

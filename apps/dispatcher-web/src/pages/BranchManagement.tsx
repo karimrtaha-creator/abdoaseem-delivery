@@ -87,20 +87,9 @@ interface Region {
   is_active: boolean;
 }
 
-interface StaffUser {
-  id: string;
-  name: string;
-  phone: string;
-  role: string;
-  branch_id: number | null;
-  region_id: number | null;
-}
-
-
 export function BranchManagement() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [regions, setRegions] = useState<Region[]>([]);
-  const [staff, setStaff] = useState<StaffUser[]>([]);
   const [zones, setZones] = useState<DeliveryZone[]>([]);
   const [todaysOrders, setTodaysOrders] = useState<OrderStatRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -115,8 +104,6 @@ export function BranchManagement() {
   const [newBranchRegion, setNewBranchRegion] = useState<number | "">("");
   const [newRegionName, setNewRegionName] = useState("");
 
-  const [pickBranchManager, setPickBranchManager] = useState<Record<number, string>>({});
-  const [pickRegionManager, setPickRegionManager] = useState<Record<number, string>>({});
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [feeDrafts, setFeeDrafts] = useState<Record<number, string>>({});
   const [zoneFeeDrafts, setZoneFeeDrafts] = useState<Record<number, string>>({});
@@ -129,10 +116,9 @@ export function BranchManagement() {
       d.setHours(0, 0, 0, 0);
       return d.toISOString();
     })();
-    const [branchesRes, regionsRes, staffRes, zonesRes, ordersRes] = await Promise.all([
+    const [branchesRes, regionsRes, zonesRes, ordersRes] = await Promise.all([
       supabase.from("branches").select("id, name, region_id, is_delivery_available, is_active, delivery_fee, photo_url, address").order("name"),
       supabase.from("regions").select("id, name, is_active").order("name"),
-      supabase.from("users").select("id, name, phone, role, branch_id, region_id").neq("role", "customer").order("name"),
       // Karim's 2026-08-13 correction: delivery_zones (per-branch,
       // per-zone fees) is the real pricing model, branches.delivery_fee is
       // only a fallback - the "Branches" table/panel now reflects that.
@@ -159,7 +145,6 @@ export function BranchManagement() {
     // only reset to the server value the first time an id is seen.
     setFeeDrafts((prev) => Object.fromEntries(loadedBranches.map((b) => [b.id, prev[b.id] ?? String(b.delivery_fee)])));
     setRegions((regionsRes.data as Region[]) ?? []);
-    setStaff((staffRes.data as StaffUser[]) ?? []);
     const loadedZones = (zonesRes.data as DeliveryZone[]) ?? [];
     setZones(loadedZones);
     setZoneFeeDrafts((prev) => Object.fromEntries(loadedZones.map((z) => [z.id, prev[z.id] ?? String(z.delivery_fee)])));
@@ -249,26 +234,6 @@ export function BranchManagement() {
     }
     return map;
   }, [zones]);
-
-  const branchManagerOf = useMemo(() => {
-    const map = new Map<number, StaffUser>();
-    for (const u of staff) {
-      if (u.role === "branch_manager" && u.branch_id != null) {
-        map.set(u.branch_id, u);
-      }
-    }
-    return map;
-  }, [staff]);
-
-  const regionManagerOf = useMemo(() => {
-    const map = new Map<number, StaffUser>();
-    for (const u of staff) {
-      if (u.role === "regional_manager" && u.region_id != null) {
-        map.set(u.region_id, u);
-      }
-    }
-    return map;
-  }, [staff]);
 
   async function addBranch() {
     setError(null);
@@ -458,56 +423,6 @@ export function BranchManagement() {
     }
   }
 
-  async function assignBranchManager(branchId: number) {
-    const userId = pickBranchManager[branchId];
-    if (!userId) return;
-    setBusyKey(`branch-${branchId}`);
-    setError(null);
-    setInfo(null);
-    try {
-      const res = await callFunction<{ displaced_user: { name: string } | null }>("assign-manager", {
-        user_id: userId,
-        target_type: "branch",
-        target_id: branchId,
-      });
-      setInfo(
-        res.displaced_user
-          ? `تم التعيين - "${res.displaced_user.name}" بقى من غير فرع دلوقتي.`
-          : "تم التعيين بنجاح.",
-      );
-      load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "فشل التعيين");
-    } finally {
-      setBusyKey(null);
-    }
-  }
-
-  async function assignRegionManager(regionId: number) {
-    const userId = pickRegionManager[regionId];
-    if (!userId) return;
-    setBusyKey(`region-${regionId}`);
-    setError(null);
-    setInfo(null);
-    try {
-      const res = await callFunction<{ displaced_user: { name: string } | null }>("assign-manager", {
-        user_id: userId,
-        target_type: "region",
-        target_id: regionId,
-      });
-      setInfo(
-        res.displaced_user
-          ? `تم التعيين - "${res.displaced_user.name}" بقى من غير منطقة دلوقتي.`
-          : "تم التعيين بنجاح.",
-      );
-      load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "فشل التعيين");
-    } finally {
-      setBusyKey(null);
-    }
-  }
-
   if (loading) return <p className="muted">جاري التحميل...</p>;
 
   return (
@@ -608,56 +523,28 @@ export function BranchManagement() {
             <thead>
               <tr>
                 <th>المنطقة</th>
-                <th>مدير المنطقة</th>
-                <th>تعيين مدير</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {regions.map((r) => {
-                const manager = regionManagerOf.get(r.id);
-                return (
-                  <tr key={r.id} style={!r.is_active ? { opacity: 0.55 } : undefined}>
-                    <td>
-                      {r.name}
-                      {!r.is_active && <span className="muted"> (مقفولة)</span>}
-                    </td>
-                    <td className={manager ? undefined : "muted"}>{manager ? manager.name : "مفيش مدير معيّن"}</td>
-                    <td>
-                      <div className="actions-cell">
-                        <select
-                          value={pickRegionManager[r.id] ?? ""}
-                          onChange={(e) => setPickRegionManager({ ...pickRegionManager, [r.id]: e.target.value })}
-                        >
-                          <option value="">-- اختر موظف --</option>
-                          {staff.map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.name} ({u.phone})
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          className="btn-sm btn-primary"
-                          disabled={busyKey === `region-${r.id}` || !pickRegionManager[r.id]}
-                          onClick={() => assignRegionManager(r.id)}
-                        >
-                          تعيين
-                        </button>
-                      </div>
-                    </td>
-                    <td>
-                      <button
-                        className="btn-sm btn-link"
-                        style={{ color: "var(--danger)" }}
-                        disabled={busyKey === `region-delete-${r.id}`}
-                        onClick={() => deleteRegion(r)}
-                      >
-                        حذف
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
+              {regions.map((r) => (
+                <tr key={r.id} style={!r.is_active ? { opacity: 0.55 } : undefined}>
+                  <td>
+                    {r.name}
+                    {!r.is_active && <span className="muted"> (مقفولة)</span>}
+                  </td>
+                  <td>
+                    <button
+                      className="btn-sm btn-link"
+                      style={{ color: "var(--danger)" }}
+                      disabled={busyKey === `region-delete-${r.id}`}
+                      onClick={() => deleteRegion(r)}
+                    >
+                      حذف
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -687,7 +574,6 @@ export function BranchManagement() {
             </thead>
             <tbody>
               {branches.map((b) => {
-                const manager = branchManagerOf.get(b.id);
                 const stats = orderStatsByBranch.get(b.id) ?? { total: 0, pending: 0, completed: 0, failed: 0 };
                 const isExpanded = expandedBranchId === b.id;
                 const branchZones = zonesByBranch.get(b.id) ?? [];
@@ -765,31 +651,6 @@ export function BranchManagement() {
                               <div>
                                 <p className="muted" style={{ margin: "0 0 6px" }}>المنطقة</p>
                                 <p>{regionName(b.region_id)}</p>
-                              </div>
-
-                              <div>
-                                <p className="muted" style={{ margin: "0 0 6px" }}>مدير الفرع</p>
-                                <p className={manager ? undefined : "muted"}>{manager ? manager.name : "مفيش مدير معيّن"}</p>
-                                <div className="actions-cell">
-                                  <select
-                                    value={pickBranchManager[b.id] ?? ""}
-                                    onChange={(e) => setPickBranchManager({ ...pickBranchManager, [b.id]: e.target.value })}
-                                  >
-                                    <option value="">-- اختر موظف --</option>
-                                    {staff.map((u) => (
-                                      <option key={u.id} value={u.id}>
-                                        {u.name} ({u.phone})
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <button
-                                    className="btn-sm btn-primary"
-                                    disabled={busyKey === `branch-${b.id}` || !pickBranchManager[b.id]}
-                                    onClick={() => assignBranchManager(b.id)}
-                                  >
-                                    تعيين
-                                  </button>
-                                </div>
                               </div>
 
                               <div>

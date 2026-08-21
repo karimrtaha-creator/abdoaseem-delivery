@@ -6,7 +6,6 @@ interface StaffRequest {
   id: number;
   requested_role: string;
   requested_branch_id: number | null;
-  requested_region_id: number | null;
   status: "pending" | "approved" | "rejected";
   requested_at: string;
   reviewed_at: string | null;
@@ -18,27 +17,21 @@ interface Branch {
   name: string;
 }
 
-interface Region {
-  id: number;
-  name: string;
-}
-
+// branch_manager/regional_manager retired as roles (2026-08-21, Karim's
+// request) - no requestable role is region-scoped anymore.
 const ROLE_LABELS: Record<string, string> = {
   driver: "طيار",
   dispatcher: "ديسباتشر",
-  branch_manager: "مدير فرع",
-  regional_manager: "مدير منطقة",
   general_manager: "مدير عام",
   team_leader: "تيم ليدر",
   call_center: "Agent",
 };
 
 // Same shape as _shared/roleScopes.ts, mirrored client-side for the form's
-// conditional branch/region picker - not shared code (this repo doesn't
-// share TS between frontend and edge functions), the server independently
+// conditional branch picker - not shared code (this repo doesn't share TS
+// between frontend and edge functions), the server independently
 // re-validates all of this regardless of what this form sends.
-const BRANCH_SCOPED_ROLES = ["driver", "dispatcher", "branch_manager"];
-const REGION_SCOPED_ROLES = ["regional_manager"];
+const BRANCH_SCOPED_ROLES = ["driver", "dispatcher"];
 const ALL_ROLES = Object.keys(ROLE_LABELS);
 
 
@@ -46,19 +39,17 @@ export function CompleteStaffRegistration({ userId }: { userId: string }) {
   const [loading, setLoading] = useState(true);
   const [request, setRequest] = useState<StaffRequest | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [regions, setRegions] = useState<Region[]>([]);
 
   const [name, setName] = useState("");
   const [role, setRole] = useState("driver");
   const [branchId, setBranchId] = useState<number | "">("");
-  const [regionId, setRegionId] = useState<number | "">("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function loadRequest() {
     const { data } = await supabase
       .from("staff_registration_requests")
-      .select("id, requested_role, requested_branch_id, requested_region_id, status, requested_at, reviewed_at, rejection_reason")
+      .select("id, requested_role, requested_branch_id, status, requested_at, reviewed_at, rejection_reason")
       .eq("user_id", userId)
       .order("requested_at", { ascending: false })
       .limit(1)
@@ -70,7 +61,6 @@ export function CompleteStaffRegistration({ userId }: { userId: string }) {
   useEffect(() => {
     loadRequest();
     supabase.from("branches").select("id, name").order("name").then(({ data }) => setBranches((data as Branch[]) ?? []));
-    supabase.from("regions").select("id, name").order("name").then(({ data }) => setRegions((data as Region[]) ?? []));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
@@ -84,15 +74,10 @@ export function CompleteStaffRegistration({ userId }: { userId: string }) {
       setError("لازم تختار الفرع");
       return;
     }
-    if (REGION_SCOPED_ROLES.includes(role) && !regionId) {
-      setError("لازم تختار المنطقة");
-      return;
-    }
     setSubmitting(true);
     try {
       const payload: Record<string, unknown> = { name: name.trim(), role };
       if (BRANCH_SCOPED_ROLES.includes(role)) payload.branch_id = branchId;
-      if (REGION_SCOPED_ROLES.includes(role)) payload.region_id = regionId;
       await callFunction("submit-staff-registration", payload);
       await loadRequest();
     } catch (err) {
@@ -155,19 +140,6 @@ export function CompleteStaffRegistration({ userId }: { userId: string }) {
               {branches.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {REGION_SCOPED_ROLES.includes(role) && (
-          <label>
-            المنطقة
-            <select value={regionId} onChange={(e) => setRegionId(e.target.value ? Number(e.target.value) : "")}>
-              <option value="">-- اختر المنطقة --</option>
-              {regions.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
                 </option>
               ))}
             </select>

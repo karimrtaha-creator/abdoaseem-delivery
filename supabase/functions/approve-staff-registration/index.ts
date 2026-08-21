@@ -1,19 +1,17 @@
-// Staff Registration feature (2026-08-11): approve or reject a pending
-// request. Reuses create-user's exact authorization matrix (imported from
-// _shared/roleScopes.ts, plus the same branch/region resolution logic
-// duplicated deliberately below - not a shared function, so a future edit
-// to one doesn't silently change the other's behavior without review) -
-// a branch_manager can never approve a regional_manager/general_manager
-// request, and a regional_manager can never approve a request for a
-// branch outside their own region, exactly like they can never CREATE
-// one directly either.
+// Staff Registration feature (2026-08-11), review authority rewritten
+// 2026-08-21 per Karim's request: branch_manager/regional_manager are
+// retired (roleScopes.ts), and general_manager is no longer the only
+// approver - dispatcher can approve driver requests for their own branch,
+// team_leader can approve call_center (Agent) requests, general_manager
+// can approve anything. Nobody else (driver, call_center themselves) can
+// review a request at all.
 //
-// Branch/region are re-validated fresh at approval time, not trusted from
-// the stored request - if a branch/region was deleted or changed between
-// submission and review, approval fails with a clear error instead of
-// silently granting access to something that no longer exists.
+// Branch is re-validated fresh at approval time, not trusted from the
+// stored request - if it was deleted/closed between submission and
+// review, approval fails with a clear error instead of silently granting
+// access to something that no longer exists.
 import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorResponse } from "../_shared/cors.ts";
-import { getAdminClient, getCaller, AppRole } from "../_shared/auth.ts";
+import { getAdminClient, getCaller, AppRole, CallerProfile } from "../_shared/auth.ts";
 import { logAudit } from "../_shared/audit.ts";
 import { checkRateLimit } from "../_shared/rateLimit.ts";
 
@@ -23,14 +21,24 @@ interface ApproveBody {
   rejection_reason?: string;
 }
 
+// Same check governs both approve and reject - a dispatcher who can't
+// approve a team_leader request shouldn't be able to reject one either
+// (that's still a review decision on a request outside their authority).
+function canReview(caller: CallerProfile, requestedRole: AppRole, requestedBranchId: number | null): boolean {
+  if (caller.role === "general_manager") return true;
+  if (caller.role === "dispatcher") return requestedRole === "driver" && requestedBranchId === caller.branch_id;
+  if (caller.role === "team_leader") return requestedRole === "call_center";
+  return false;
+}
+
 serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("method not allowed", 405);
 
   const caller = await getCaller(req);
   if (!caller || !caller.is_active) return errorResponse("unauthorized", 401);
-  if (!["general_manager", "regional_manager", "branch_manager"].includes(caller.role)) {
-    return errorResponse("only general_manager/regional_manager/branch_manager can review requests", 403);
+  if (!["general_manager", "dispatcher", "team_leader"].includes(caller.role)) {
+    return errorResponse("only general_manager, dispatcher, or team_leader can review requests", 403);
   }
 
   let body: ApproveBody;
@@ -51,12 +59,17 @@ serveWithCors(async (req) => {
 
   const { data: reqRow, error: reqError } = await admin
     .from("staff_registration_requests")
-    .select("id, user_id, requested_name, requested_role, requested_branch_id, requested_region_id, status")
+    .select("id, user_id, requested_name, requested_role, requested_branch_id, status")
     .eq("id", request_id)
     .single();
   if (reqError || !reqRow) return errorResponse("request not found", 404);
   if (reqRow.status !== "pending") {
     return errorResponse(`this request was already ${reqRow.status} - decisions are final`, 409);
+  }
+
+  const requestedRole = reqRow.requested_role as AppRole;
+  if (!canReview(caller, requestedRole, reqRow.requested_branch_id)) {
+    return errorResponse("you are not authorized to review this request", 403);
   }
 
   if (action === "reject") {
@@ -79,59 +92,21 @@ serveWithCors(async (req) => {
     return jsonResponse({ request_id, status: "rejected" });
   }
 
-  // action === "approve" - same authorization matrix as create-user,
-  // re-validated fresh against the stored request.
-  const role = reqRow.requested_role as AppRole;
+  // action === "approve"
   let resolvedBranchId: number | null = null;
-  let resolvedRegionId: number | null = null;
-
-  if (caller.role === "general_manager") {
-    if (["driver", "dispatcher", "branch_manager"].includes(role)) {
-      if (!reqRow.requested_branch_id) return errorResponse("this request has no branch_id - cannot approve", 422);
-      const { data: branch } = await admin.from("branches").select("id").eq("id", reqRow.requested_branch_id).maybeSingle();
-      if (!branch) return errorResponse("the requested branch no longer exists - reject or ask for resubmission", 422);
-      resolvedBranchId = reqRow.requested_branch_id;
-    } else if (role === "regional_manager") {
-      if (!reqRow.requested_region_id) return errorResponse("this request has no region_id - cannot approve", 422);
-      const { data: region } = await admin.from("regions").select("id").eq("id", reqRow.requested_region_id).maybeSingle();
-      if (!region) return errorResponse("the requested region no longer exists - reject or ask for resubmission", 422);
-      resolvedRegionId = reqRow.requested_region_id;
-    }
-    // central roles (general_manager/team_leader/call_center): neither field applies.
-  } else if (caller.role === "regional_manager") {
-    if (!["branch_manager", "dispatcher", "driver"].includes(role)) {
-      return errorResponse("regional_manager can only approve branch_manager, dispatcher, or driver requests", 403);
-    }
+  if (["driver", "dispatcher"].includes(requestedRole)) {
     if (!reqRow.requested_branch_id) return errorResponse("this request has no branch_id - cannot approve", 422);
-    const { data: branch } = await admin
-      .from("branches")
-      .select("id, region_id")
-      .eq("id", reqRow.requested_branch_id)
-      .maybeSingle();
+    const { data: branch } = await admin.from("branches").select("id").eq("id", reqRow.requested_branch_id).maybeSingle();
     if (!branch) return errorResponse("the requested branch no longer exists - reject or ask for resubmission", 422);
-    if (branch.region_id !== caller.region_id) {
-      return errorResponse("that branch is not in your region", 403);
-    }
     resolvedBranchId = reqRow.requested_branch_id;
-  } else {
-    // branch_manager
-    if (!["dispatcher", "driver"].includes(role)) {
-      return errorResponse("branch_manager can only approve dispatcher or driver requests", 403);
-    }
-    if (reqRow.requested_branch_id !== caller.branch_id) {
-      return errorResponse("that request is not for your branch", 403);
-    }
-    // Forced to the caller's own branch regardless - same "never trust a
-    // client-influenced branch_id for a role whose whole authority is 'my
-    // branch only'" rule create-user itself follows.
-    resolvedBranchId = caller.branch_id;
   }
+  // central roles (general_manager/team_leader/call_center): branch_id stays null.
 
   const profileFields = {
     name: reqRow.requested_name,
-    role,
+    role: requestedRole,
     branch_id: resolvedBranchId,
-    region_id: resolvedRegionId,
+    region_id: null,
     is_active: true,
   };
   const { error: userUpdateError } = await admin.from("users").update(profileFields).eq("id", reqRow.user_id);
@@ -146,17 +121,15 @@ serveWithCors(async (req) => {
 
   await logAudit(admin, caller, "staff_registration_approved", "staff_registration_request", request_id, {
     user_id: reqRow.user_id,
-    role,
+    role: requestedRole,
     branch_id: resolvedBranchId,
-    region_id: resolvedRegionId,
   });
 
   return jsonResponse({
     request_id,
     status: "approved",
     user_id: reqRow.user_id,
-    role,
+    role: requestedRole,
     branch_id: resolvedBranchId,
-    region_id: resolvedRegionId,
   });
 });

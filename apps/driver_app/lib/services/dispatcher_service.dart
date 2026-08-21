@@ -65,6 +65,23 @@ class ActiveDriver {
       ActiveDriver(id: map['id'] as String, name: map['name'] as String? ?? '');
 }
 
+/// Driver-hiring request a dispatcher can review (2026-08-21, role
+/// restructuring: dispatcher can approve/reject only requested_role='driver'
+/// rows for their own branch - server-enforced via approve-staff-
+/// registration's canReview() and migration 0075's RLS policy; this list is
+/// already scoped by RLS with no client-side filtering needed).
+class StaffRequest {
+  final int id;
+  final String requestedName;
+  final DateTime requestedAt;
+  StaffRequest({required this.id, required this.requestedName, required this.requestedAt});
+  factory StaffRequest.fromMap(Map<String, dynamic> map) => StaffRequest(
+        id: map['id'] as int,
+        requestedName: map['requested_name'] as String? ?? '',
+        requestedAt: DateTime.parse(map['requested_at'] as String).toLocal(),
+      );
+}
+
 class DispatcherService {
   final SupabaseClient _client = Supabase.instance.client;
 
@@ -162,6 +179,27 @@ class DispatcherService {
       'order_id': orderId,
       'driver_id': driverId,
       'delivery_fee_after_tax': deliveryFeeAfterTax,
+    });
+  }
+
+  Future<List<StaffRequest>> pendingDriverRequests() async {
+    final rows = await _client
+        .from('staff_registration_requests')
+        .select('id, requested_name, requested_at')
+        .eq('status', 'pending')
+        .order('requested_at');
+    return (rows as List<dynamic>).map((r) => StaffRequest.fromMap(r as Map<String, dynamic>)).toList();
+  }
+
+  Future<Map<String, dynamic>> approveStaffRequest(int requestId) {
+    return _invoke('approve-staff-registration', {'request_id': requestId, 'action': 'approve'});
+  }
+
+  Future<Map<String, dynamic>> rejectStaffRequest(int requestId, {String? reason}) {
+    return _invoke('approve-staff-registration', {
+      'request_id': requestId,
+      'action': 'reject',
+      if (reason != null && reason.trim().isNotEmpty) 'rejection_reason': reason.trim(),
     });
   }
 

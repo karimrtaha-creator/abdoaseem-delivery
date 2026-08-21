@@ -8,13 +8,12 @@ import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorRespons
 import { getAdminClient, getCaller, AppRole } from "../_shared/auth.ts";
 import { logAudit } from "../_shared/audit.ts";
 import { checkRateLimit } from "../_shared/rateLimit.ts";
-import { BRANCH_SCOPED_ROLES, REGION_SCOPED_ROLES, ALL_STAFF_ROLES } from "../_shared/roleScopes.ts";
+import { BRANCH_SCOPED_ROLES, ALL_STAFF_ROLES } from "../_shared/roleScopes.ts";
 
 interface SubmitBody {
   name?: string;
   role?: string;
   branch_id?: number;
-  region_id?: number;
 }
 
 serveWithCors(async (req) => {
@@ -44,21 +43,15 @@ serveWithCors(async (req) => {
   if (!withinLimit) return errorResponse("too many requests - slow down", 429);
 
   let requestedBranchId: number | null = null;
-  let requestedRegionId: number | null = null;
 
   if (BRANCH_SCOPED_ROLES.includes(role)) {
     if (!body.branch_id) return errorResponse("branch_id is required for this role");
     const { data: branch } = await admin.from("branches").select("id").eq("id", body.branch_id).maybeSingle();
     if (!branch) return errorResponse("branch not found", 404);
     requestedBranchId = body.branch_id;
-  } else if (REGION_SCOPED_ROLES.includes(role)) {
-    if (!body.region_id) return errorResponse("region_id is required for this role");
-    const { data: region } = await admin.from("regions").select("id").eq("id", body.region_id).maybeSingle();
-    if (!region) return errorResponse("region not found", 404);
-    requestedRegionId = body.region_id;
   }
-  // CENTRAL_ROLES (general_manager/team_leader/call_center): neither
-  // field applies, both stay null regardless of what was sent.
+  // CENTRAL_ROLES (general_manager/team_leader/call_center): branch_id
+  // stays null regardless of what was sent.
 
   // Friendly check before hitting the exclude constraint - same info
   // either way, this just gives a clear message instead of a raw
@@ -80,7 +73,7 @@ serveWithCors(async (req) => {
       requested_name: name,
       requested_role: role,
       requested_branch_id: requestedBranchId,
-      requested_region_id: requestedRegionId,
+      requested_region_id: null,
     })
     .select("id, requested_at")
     .single();
@@ -97,7 +90,6 @@ serveWithCors(async (req) => {
     requested_name: name,
     requested_role: role,
     requested_branch_id: requestedBranchId,
-    requested_region_id: requestedRegionId,
   });
 
   return jsonResponse({

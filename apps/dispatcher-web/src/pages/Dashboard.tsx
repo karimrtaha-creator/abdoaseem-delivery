@@ -49,7 +49,13 @@ interface StaffLite {
 
 const ONGOING_STATUSES = ["preparing", "out_for_delivery", "delayed"];
 
-export function Dashboard({ profile }: { profile: Profile }) {
+// profile isn't used for client-side scoping anymore - branch_manager/
+// regional_manager retired (2026-08-21), and general_manager/team_leader
+// (the only roles that ever reach this screen, see TABS_BY_ROLE) both see
+// everything RLS already lets them see, unscoped. Kept in the signature
+// only so this screen matches every other tab's ScreenFor(tab, profile)
+// call shape.
+export function Dashboard({ profile: _profile }: { profile: Profile }) {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [drivers, setDrivers] = useState<DriverLite[]>([]);
@@ -139,21 +145,12 @@ export function Dashboard({ profile }: { profile: Profile }) {
     setNewlyCancelledOrders((prev) => prev.filter((o) => o.id !== orderId));
   }
 
-  // Branches this role is even allowed to focus on - drives the dropdown
-  // options. Actual data scoping already happened server-side via RLS
-  // (`orders`/`branches` only ever return rows this role can see), this
-  // is just which of those visible branches to additionally filter by.
-  const scopedBranches = useMemo(() => {
-    if (profile.role === "branch_manager") return branches.filter((b) => b.id === profile.branch_id);
-    if (profile.role === "regional_manager") return branches.filter((b) => b.region_id === profile.region_id);
-    return branches;
-  }, [branches, profile.role, profile.branch_id, profile.region_id]);
-
-  useEffect(() => {
-    if (profile.role === "branch_manager" && profile.branch_id) {
-      setFocusBranchId(profile.branch_id);
-    }
-  }, [profile.role, profile.branch_id]);
+  // branch_manager/regional_manager retired as roles (2026-08-21, Karim's
+  // request) - this screen is only ever reached by general_manager/
+  // team_leader now (see TABS_BY_ROLE), neither of which is branch- or
+  // region-scoped, so every branch RLS already lets them see is a valid
+  // focus option.
+  const scopedBranches = branches;
 
   const visibleOrders = useMemo(
     () => (focusBranchId === "all" ? orders : orders.filter((o) => o.branch_id === focusBranchId)),
@@ -268,7 +265,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
         </div>
       )}
 
-      {profile.role !== "branch_manager" && scopedBranches.length > 1 && (
+      {scopedBranches.length > 1 && (
         <div className="card">
           <label>
             التركيز على

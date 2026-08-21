@@ -69,6 +69,13 @@ class _DispatcherHomeScreenState extends State<DispatcherHomeScreen> {
         title: const Text('طابور التجهيز - ديسباتشر'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.person_add_alt_1),
+            tooltip: 'طلبات توظيف الطيارين',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => _DriverHiringRequestsScreen(service: _service)),
+            ),
+          ),
+          IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'تسجيل خروج',
             onPressed: () => _authService.signOut(),
@@ -407,6 +414,147 @@ class _OrderActionScreenState extends State<_OrderActionScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// New dispatcher capability (2026-08-21, role restructuring): dispatcher
+/// can approve/reject driver-hiring requests for their own branch only. The
+/// list query and both actions are already fully scoped server-side (RLS +
+/// approve-staff-registration's canReview()) - this screen shows whatever
+/// comes back and calls the same edge function PendingApprovals.tsx uses on
+/// the web, no new server logic needed here.
+class _DriverHiringRequestsScreen extends StatefulWidget {
+  final DispatcherService service;
+  const _DriverHiringRequestsScreen({required this.service});
+
+  @override
+  State<_DriverHiringRequestsScreen> createState() => _DriverHiringRequestsScreenState();
+}
+
+class _DriverHiringRequestsScreenState extends State<_DriverHiringRequestsScreen> {
+  List<StaffRequest> _requests = [];
+  bool _loading = true;
+  int? _busyId;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final requests = await widget.service.pendingDriverRequests();
+      if (mounted) setState(() => _requests = requests);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'فشل تحميل الطلبات');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _approve(StaffRequest request) async {
+    setState(() {
+      _busyId = request.id;
+      _error = null;
+    });
+    try {
+      await widget.service.approveStaffRequest(request.id);
+      await _load();
+    } on DispatcherServerException catch (e) {
+      setState(() => _error = e.message);
+    } catch (_) {
+      setState(() => _error = 'فشلت الموافقة');
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
+  Future<void> _reject(StaffRequest request) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: const Text('سبب الرفض (اختياري)'),
+          content: TextField(controller: controller, autofocus: true),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('إلغاء')),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(controller.text),
+              child: const Text('تأكيد الرفض'),
+            ),
+          ],
+        );
+      },
+    );
+    if (reason == null) return;
+    setState(() {
+      _busyId = request.id;
+      _error = null;
+    });
+    try {
+      await widget.service.rejectStaffRequest(request.id, reason: reason);
+      await _load();
+    } on DispatcherServerException catch (e) {
+      setState(() => _error = e.message);
+    } catch (_) {
+      setState(() => _error = 'فشل الرفض');
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('طلبات توظيف الطيارين')),
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.all(12),
+                children: [
+                  if (_error != null) Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                  ),
+                  if (_requests.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 40),
+                      child: Center(child: Text('مفيش طلبات توظيف قيد المراجعة', style: TextStyle(color: Colors.black54))),
+                    ),
+                  ..._requests.map((request) => Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          title: Text(request.requestedName),
+                          subtitle: Text(request.requestedAt.toString()),
+                          trailing: _busyId == request.id
+                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.check_circle, color: Colors.green),
+                                      tooltip: 'موافقة',
+                                      onPressed: () => _approve(request),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.cancel, color: Colors.red),
+                                      tooltip: 'رفض',
+                                      onPressed: () => _reject(request),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      )),
+                ],
+              ),
       ),
     );
   }

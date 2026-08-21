@@ -1,5 +1,6 @@
-// Permanent removal of a staff account - same authorization matrix as
-// deactivate-user, but deliberately narrower in two ways:
+// Permanent removal of a staff account - general_manager only
+// (branch_manager/regional_manager retired 2026-08-21, see
+// roleScopes.ts), deliberately narrower than deactivate-user in two ways:
 //   1. Only operates on an already-deactivated target. Deleting an active
 //      account skips the "cut off access immediately" ban-and-block step
 //      deactivate-user performs, so this forces deactivate-first.
@@ -17,17 +18,14 @@ import { corsHeaders, jsonResponse, errorResponse, serveWithCors, dbErrorRespons
 import { getAdminClient, getCaller } from "../_shared/auth.ts";
 import { logAudit } from "../_shared/audit.ts";
 
-const REGIONAL_MANAGER_TARGETS = ["branch_manager", "dispatcher", "driver"];
-const BRANCH_MANAGER_TARGETS = ["dispatcher", "driver"];
-
 serveWithCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("method not allowed", 405);
 
   const caller = await getCaller(req);
   if (!caller || !caller.is_active) return errorResponse("unauthorized", 401);
-  if (!["general_manager", "regional_manager", "branch_manager"].includes(caller.role)) {
-    return errorResponse("only general_manager/regional_manager/branch_manager can delete users", 403);
+  if (caller.role !== "general_manager") {
+    return errorResponse("only general_manager can delete users", 403);
   }
 
   let body: { user_id?: string };
@@ -52,27 +50,7 @@ serveWithCors(async (req) => {
   if (targetError) return dbErrorResponse("delete-user", targetError.message);
   if (!target) return errorResponse("user not found", 404);
 
-  if (caller.role === "regional_manager") {
-    if (!REGIONAL_MANAGER_TARGETS.includes(target.role)) {
-      return errorResponse("regional_manager can only delete branch_manager, dispatcher, or driver accounts", 403);
-    }
-    const { data: branch } = await admin
-      .from("branches")
-      .select("id, region_id")
-      .eq("id", target.branch_id)
-      .maybeSingle();
-    if (!branch || branch.region_id !== caller.region_id) {
-      return errorResponse("that user is not in your region", 403);
-    }
-  } else if (caller.role === "branch_manager") {
-    if (!BRANCH_MANAGER_TARGETS.includes(target.role)) {
-      return errorResponse("branch_manager can only delete dispatcher or driver accounts", 403);
-    }
-    if (target.branch_id !== caller.branch_id) {
-      return errorResponse("that user is not in your branch", 403);
-    }
-  }
-  // general_manager: no further scope check.
+  // No further scope check - caller is already confirmed general_manager above.
 
   if (target.is_active) {
     return errorResponse("deactivate this account first, then delete it", 409);
