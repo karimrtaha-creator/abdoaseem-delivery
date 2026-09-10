@@ -860,3 +860,67 @@ button, input, select { font-family: var(--font-body); }
   padding: 0;
 }
 .star-btn.filled { color: var(--color-onion); }
+
+/* ---------------------------------------------------------------------------
+   Box builder ("اصنع وجبتك بنفسك") - new homepage centerpiece
+   --------------------------------------------------------------------------- */
+.box-builder-title { text-align: center; }
+.box-builder {
+  padding-block: var(--space-4);
+}
+
+.box-visual-wrap {
+  max-width: 420px;
+  margin: var(--space-4) auto 0;
+}
+/* Fixed-height container, layers stack bottom-up proportional to their
+   share of the size's capacity_grams - a plain CSS "pouring into a
+   container" effect (Karim wanted the fill to feel real, not a checklist),
+   no canvas/animation library needed. */
+.box-visual {
+  height: 260px;
+  border: 3px solid var(--color-lentil);
+  border-radius: var(--radius-md) var(--radius-md) var(--space-2) var(--space-2);
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column-reverse;
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  position: relative;
+}
+.box-visual-layer {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  border-top: 1px solid rgba(255, 255, 255, 0.35);
+  transition: height 0.25s ease;
+  overflow: hidden;
+  padding: 2px 8px;
+}
+.box-visual-empty {
+  margin: auto;
+  color: var(--color-lentil-muted);
+  text-align: center;
+  padding: 0 var(--space-3);
+}
+.box-visual-gauge {
+  text-align: center;
+  margin-top: var(--space-2);
+  font-weight: 700;
+  color: var(--color-lentil-muted);
+}
+.box-visual-gauge-full { color: var(--color-tomato-dark); }
+
+.box-builder-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.box-builder-stepper span { min-width: 24px; text-align: center; font-weight: 700; }

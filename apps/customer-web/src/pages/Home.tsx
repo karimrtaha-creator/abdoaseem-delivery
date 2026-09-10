@@ -2,22 +2,9 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 import { OffersRibbon } from "../components/OffersRibbon";
+import { BoxBuilder } from "../components/BoxBuilder";
 import { useCart } from "../lib/CartContext";
 import { useAuth } from "../lib/AuthContext";
-
-interface MenuCategory {
-  id: number;
-  name: string;
-  display_order: number;
-}
-
-const CATEGORY_BLURBS: Record<string, string> = {
-  الكشري: "طبقات رز وعدس ومكرونة وحمص، وصلصة الدقة والبصل المقرمش فوق",
-  الطواجن: "فراخ ولحمة وخضار، على النار لحد ما تستوي",
-  الحلو: "أرز باللبن وحلويات بسيطة تقفل بيها الوجبة",
-  المشروبات: "كولا ومياه ومشروبات باردة",
-  اضافات: "زود وجبتك بإضافات على مزاجك",
-};
 
 const FACEBOOK_PAGE_URL = "https://www.facebook.com/share/1cjTyg58CM/?mibextid=wwXIfr";
 const INSTAGRAM_URL = "https://www.instagram.com/koshry_el_ghobashy?igsh=MW82ZWlseTI0NWtn";
@@ -31,7 +18,6 @@ function isUploadedVideoFile(url: string): boolean {
 }
 
 export function Home() {
-  const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [promoVideos, setPromoVideos] = useState<{ id: number; video_url: string }[]>([]);
   const [promoVideoHeading, setPromoVideoHeading] = useState("شوفنا وإحنا بنطبخ");
   const navigate = useNavigate();
@@ -39,11 +25,6 @@ export function Home() {
   const { profile, signOut } = useAuth();
 
   useEffect(() => {
-    supabase
-      .from("menu_categories")
-      .select("id, name, display_order")
-      .order("display_order")
-      .then(({ data }) => setCategories((data as MenuCategory[]) ?? []));
     // Staff-editable from the Staff Portal (Business Hours screen) - see
     // migrations 0063/0067. Section is skipped entirely when the list is
     // empty, so removing every link is enough to take it down, no code
@@ -94,20 +75,7 @@ export function Home() {
       </header>
 
       <div className="wrap">
-        <section className="hero">
-          <div className="hero-card">
-            <h1>كشري الغباشي</h1>
-            <p>ساخن ومقرمش زي ما اتعودت بالظبط - يوصلك لحد باب البيت في دقايق.</p>
-            <div className="row">
-              <button className="btn btn-primary btn-lg" onClick={() => navigate("/menu")}>
-                اطلب دلوقتي
-              </button>
-              <Link to="/menu" className="btn btn-ghost btn-lg">
-                شوف المنيو
-              </Link>
-            </div>
-          </div>
-        </section>
+        <BoxBuilder />
 
         {promoVideos.length > 0 && (
           <section className="section" style={{ paddingBlock: "var(--space-4)" }}>
@@ -135,17 +103,10 @@ export function Home() {
           </section>
         )}
 
-        <section className="section">
-          <h2 className="section-title">المنيو</h2>
-          <div className="category-grid">
-            {categories.map((c) => (
-              <button key={c.id} className="category-card" onClick={() => navigate("/menu")}>
-                <h3>{c.name}</h3>
-                <p>{CATEGORY_BLURBS[c.name] ?? "تصفح الأصناف"}</p>
-              </button>
-            ))}
-            {categories.length === 0 && <p className="muted">جاري تحميل المنيو...</p>}
-          </div>
+        <section className="section" style={{ textAlign: "center", paddingBlock: "var(--space-3)" }}>
+          <Link to="/menu" className="btn-link">
+            أو اطلب من المنيو العادي
+          </Link>
         </section>
       </div>
 

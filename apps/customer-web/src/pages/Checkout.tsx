@@ -223,6 +223,9 @@ export function Checkout() {
           items: cart.lines.map((l) => ({
             menu_item_id: l.menu_item_id,
             combo_offer_id: l.combo_offer_id,
+            box_size_id: l.builtBox?.box_size_id,
+            fills: l.builtBox?.fills.map((f) => ({ menu_item_id: f.menu_item_id, quantity: f.quantity })),
+            extras: l.builtBox?.extras.map((e) => ({ menu_item_id: e.menu_item_id, quantity: e.quantity })),
             quantity: l.quantity,
             combo_choice_option_ids: l.comboChoiceOptionIds,
             note: l.note,
@@ -348,6 +351,13 @@ export function Checkout() {
             </div>
             {line.comboChoiceLabels && line.comboChoiceLabels.length > 0 && (
               <p className="muted checkout-line-choices">{line.comboChoiceLabels.join(" - ")}</p>
+            )}
+            {line.builtBox && (
+              <p className="muted checkout-line-choices">
+                {line.builtBox.fills.map((f) => `${f.name} ×${f.quantity}`).join("، ")}
+                {line.builtBox.extras.length > 0 &&
+                  ` | إضافات: ${line.builtBox.extras.map((e) => `${e.name} ×${e.quantity}`).join("، ")}`}
+              </p>
             )}
             <div className="checkout-line-qty">
               <button
