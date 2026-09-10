@@ -5,6 +5,30 @@ interface MenuCategory {
   id: number;
   name: string;
   display_order: number;
+  is_buildable_box: boolean;
+}
+
+// "اصنع وجبتك بنفسك" (Karim, 2026-09-10) - see supabase/migrations/0076_box_builder.sql.
+interface BoxSize {
+  id: number;
+  category_id: number;
+  name: string;
+  price: number;
+  capacity_grams: number;
+  is_available: boolean;
+}
+interface BoxFillComponent {
+  id: number;
+  category_id: number;
+  menu_item_id: number;
+  grams_per_unit: number;
+  is_available: boolean;
+}
+interface BoxExtraSuggestion {
+  id: number;
+  category_id: number;
+  menu_item_id: number;
+  is_available: boolean;
 }
 
 interface MenuItem {
@@ -81,9 +105,27 @@ export function MenuManagement() {
   const [newComboPrice, setNewComboPrice] = useState("");
   const [creatingCombo, setCreatingCombo] = useState(false);
 
+  // "اصنع وجبتك بنفسك" box builder config
+  const [boxSizes, setBoxSizes] = useState<BoxSize[]>([]);
+  const [boxFillComponents, setBoxFillComponents] = useState<BoxFillComponent[]>([]);
+  const [boxExtraSuggestions, setBoxExtraSuggestions] = useState<BoxExtraSuggestion[]>([]);
+  const [togglingBuildableCategoryId, setTogglingBuildableCategoryId] = useState<number | null>(null);
+  const [newBoxSizeDrafts, setNewBoxSizeDrafts] = useState<Record<number, { name: string; price: string; capacity_grams: string }>>({});
+  const [creatingBoxSizeCategoryId, setCreatingBoxSizeCategoryId] = useState<number | null>(null);
+  const [deletingBoxSizeId, setDeletingBoxSizeId] = useState<number | null>(null);
+  const [togglingBoxSizeId, setTogglingBoxSizeId] = useState<number | null>(null);
+  const [newFillDrafts, setNewFillDrafts] = useState<Record<number, { menu_item_id: string; grams_per_unit: string }>>({});
+  const [creatingFillCategoryId, setCreatingFillCategoryId] = useState<number | null>(null);
+  const [deletingFillId, setDeletingFillId] = useState<number | null>(null);
+  const [togglingFillId, setTogglingFillId] = useState<number | null>(null);
+  const [newExtraDrafts, setNewExtraDrafts] = useState<Record<number, string>>({});
+  const [creatingExtraCategoryId, setCreatingExtraCategoryId] = useState<number | null>(null);
+  const [deletingExtraId, setDeletingExtraId] = useState<number | null>(null);
+  const [togglingExtraId, setTogglingExtraId] = useState<number | null>(null);
+
   async function load() {
-    const [categoriesRes, itemsRes, combosRes, comboSectionRes, choiceGroupsRes] = await Promise.all([
-      supabase.from("menu_categories").select("id, name, display_order").order("display_order"),
+    const [categoriesRes, itemsRes, combosRes, comboSectionRes, choiceGroupsRes, boxSizesRes, boxFillComponentsRes, boxExtraSuggestionsRes] = await Promise.all([
+      supabase.from("menu_categories").select("id, name, display_order, is_buildable_box").order("display_order"),
       supabase
         .from("menu_items")
         .select("id, category_id, name, price, is_available, image_url, description, display_order")
@@ -95,6 +137,9 @@ export function MenuManagement() {
         .from("combo_choice_groups")
         .select("id, combo_offer_id, label, combo_choice_options(id, choice_group_id, label, is_available, display_order)")
         .order("display_order"),
+      supabase.from("box_sizes").select("id, category_id, name, price, capacity_grams, is_available").order("display_order"),
+      supabase.from("box_fill_components").select("id, category_id, menu_item_id, grams_per_unit, is_available").order("display_order"),
+      supabase.from("box_extra_suggestions").select("id, category_id, menu_item_id, is_available").order("display_order"),
     ]);
     const loadedCategories = (categoriesRes.data as MenuCategory[]) ?? [];
     const loadedItems = (itemsRes.data as MenuItem[]) ?? [];
@@ -103,6 +148,9 @@ export function MenuManagement() {
     setItems(loadedItems);
     setCombos(loadedCombos);
     setComboChoiceGroups((choiceGroupsRes.data as ComboChoiceGroup[]) ?? []);
+    setBoxSizes((boxSizesRes.data as BoxSize[]) ?? []);
+    setBoxFillComponents((boxFillComponentsRes.data as BoxFillComponent[]) ?? []);
+    setBoxExtraSuggestions((boxExtraSuggestionsRes.data as BoxExtraSuggestion[]) ?? []);
     // load() is called after every unrelated mutation on this page (reorder,
     // create item/combo, etc.) - keeping an already-typed, not-yet-saved
     // draft instead of overwriting it stops one action from silently
@@ -140,6 +188,192 @@ export function MenuManagement() {
     }
     return map;
   }, [comboChoiceGroups]);
+
+  const boxSizesByCategory = useMemo(() => {
+    const map = new Map<number, BoxSize[]>();
+    for (const size of boxSizes) {
+      const list = map.get(size.category_id) ?? [];
+      list.push(size);
+      map.set(size.category_id, list);
+    }
+    return map;
+  }, [boxSizes]);
+
+  const boxFillComponentsByCategory = useMemo(() => {
+    const map = new Map<number, BoxFillComponent[]>();
+    for (const component of boxFillComponents) {
+      const list = map.get(component.category_id) ?? [];
+      list.push(component);
+      map.set(component.category_id, list);
+    }
+    return map;
+  }, [boxFillComponents]);
+
+  const boxExtraSuggestionsByCategory = useMemo(() => {
+    const map = new Map<number, BoxExtraSuggestion[]>();
+    for (const suggestion of boxExtraSuggestions) {
+      const list = map.get(suggestion.category_id) ?? [];
+      list.push(suggestion);
+      map.set(suggestion.category_id, list);
+    }
+    return map;
+  }, [boxExtraSuggestions]);
+
+  const itemNameById = useMemo(() => new Map(items.map((i) => [i.id, i.name])), [items]);
+
+  async function toggleBuildableCategory(category: MenuCategory) {
+    setError(null);
+    setTogglingBuildableCategoryId(category.id);
+    const { error: updateError } = await supabase
+      .from("menu_categories")
+      .update({ is_buildable_box: !category.is_buildable_box })
+      .eq("id", category.id);
+    setTogglingBuildableCategoryId(null);
+    if (updateError) return setError(updateError.message);
+    setCategories((prev) => prev.map((c) => (c.id === category.id ? { ...c, is_buildable_box: !c.is_buildable_box } : c)));
+  }
+
+  async function createBoxSize(categoryId: number) {
+    setError(null);
+    const draft = newBoxSizeDrafts[categoryId] ?? { name: "", price: "", capacity_grams: "" };
+    if (!draft.name.trim()) return setError("اسم الحجم مطلوب");
+    const price = Number(draft.price);
+    const capacityGrams = Number(draft.capacity_grams);
+    if (!draft.price || Number.isNaN(price) || price <= 0) return setError("سعر الحجم لازم يكون رقم صحيح أكبر من صفر");
+    if (!draft.capacity_grams || !Number.isInteger(capacityGrams) || capacityGrams <= 0) {
+      return setError("سعة العلبة بالجرام لازم تكون رقم صحيح أكبر من صفر");
+    }
+    setCreatingBoxSizeCategoryId(categoryId);
+    const categorySizes = boxSizesByCategory.get(categoryId) ?? [];
+    const nextOrder = categorySizes.length > 0 ? Math.max(...categorySizes.map((s) => s.id)) + 1 : 1;
+    const { error: insertError } = await supabase.from("box_sizes").insert({
+      category_id: categoryId,
+      name: draft.name.trim(),
+      price,
+      capacity_grams: capacityGrams,
+      display_order: nextOrder,
+      is_available: true,
+    });
+    setCreatingBoxSizeCategoryId(null);
+    if (insertError) return setError(insertError.message);
+    setNewBoxSizeDrafts((prev) => ({ ...prev, [categoryId]: { name: "", price: "", capacity_grams: "" } }));
+    load();
+  }
+
+  async function toggleBoxSizeAvailable(size: BoxSize) {
+    setError(null);
+    setTogglingBoxSizeId(size.id);
+    const { error: updateError } = await supabase.from("box_sizes").update({ is_available: !size.is_available }).eq("id", size.id);
+    setTogglingBoxSizeId(null);
+    if (updateError) return setError(updateError.message);
+    setBoxSizes((prev) => prev.map((s) => (s.id === size.id ? { ...s, is_available: !s.is_available } : s)));
+  }
+
+  async function deleteBoxSize(size: BoxSize) {
+    if (!confirm(`حذف حجم "${size.name}" نهائيًا؟`)) return;
+    setError(null);
+    setDeletingBoxSizeId(size.id);
+    const { error: deleteError } = await supabase.from("box_sizes").delete().eq("id", size.id);
+    setDeletingBoxSizeId(null);
+    if (deleteError) {
+      // Same "protect real order history" pattern as deleteItem/deleteCombo -
+      // a box size that was actually ordered before can't be hard-deleted.
+      if (deleteError.code === "23503") {
+        setError(`حجم "${size.name}" اتطلب قبل كده في أوردرات حقيقية - مينفعش يتمسح نهائي، تقدر توقفه بدل ما تمسحه`);
+      } else {
+        setError(deleteError.message);
+      }
+      return;
+    }
+    setBoxSizes((prev) => prev.filter((s) => s.id !== size.id));
+  }
+
+  async function createFillComponent(categoryId: number) {
+    setError(null);
+    const draft = newFillDrafts[categoryId] ?? { menu_item_id: "", grams_per_unit: "" };
+    if (!draft.menu_item_id) return setError("اختار المنتج");
+    const gramsPerUnit = Number(draft.grams_per_unit);
+    if (!draft.grams_per_unit || !Number.isInteger(gramsPerUnit) || gramsPerUnit <= 0) {
+      return setError("الجرامات لكل وحدة لازم تكون رقم صحيح أكبر من صفر");
+    }
+    setCreatingFillCategoryId(categoryId);
+    const { error: insertError } = await supabase.from("box_fill_components").insert({
+      category_id: categoryId,
+      menu_item_id: Number(draft.menu_item_id),
+      grams_per_unit: gramsPerUnit,
+      is_available: true,
+    });
+    setCreatingFillCategoryId(null);
+    if (insertError) {
+      // unique(category_id, menu_item_id) - the same product can't be added
+      // as a fill component for this category twice.
+      if (insertError.code === "23505") return setError("المنتج ده مضاف بالفعل كمكوّن في القسم ده");
+      return setError(insertError.message);
+    }
+    setNewFillDrafts((prev) => ({ ...prev, [categoryId]: { menu_item_id: "", grams_per_unit: "" } }));
+    load();
+  }
+
+  async function toggleFillAvailable(component: BoxFillComponent) {
+    setError(null);
+    setTogglingFillId(component.id);
+    const { error: updateError } = await supabase
+      .from("box_fill_components")
+      .update({ is_available: !component.is_available })
+      .eq("id", component.id);
+    setTogglingFillId(null);
+    if (updateError) return setError(updateError.message);
+    setBoxFillComponents((prev) => prev.map((c) => (c.id === component.id ? { ...c, is_available: !c.is_available } : c)));
+  }
+
+  async function deleteFillComponent(component: BoxFillComponent) {
+    setError(null);
+    setDeletingFillId(component.id);
+    const { error: deleteError } = await supabase.from("box_fill_components").delete().eq("id", component.id);
+    setDeletingFillId(null);
+    if (deleteError) return setError(deleteError.message);
+    setBoxFillComponents((prev) => prev.filter((c) => c.id !== component.id));
+  }
+
+  async function createExtraSuggestion(categoryId: number) {
+    setError(null);
+    const menuItemId = newExtraDrafts[categoryId];
+    if (!menuItemId) return setError("اختار المنتج");
+    setCreatingExtraCategoryId(categoryId);
+    const { error: insertError } = await supabase.from("box_extra_suggestions").insert({
+      category_id: categoryId,
+      menu_item_id: Number(menuItemId),
+      is_available: true,
+    });
+    setCreatingExtraCategoryId(null);
+    if (insertError) {
+      if (insertError.code === "23505") return setError("المنتج ده مضاف بالفعل كإضافة في القسم ده");
+      return setError(insertError.message);
+    }
+    setNewExtraDrafts((prev) => ({ ...prev, [categoryId]: "" }));
+    load();
+  }
+
+  async function toggleExtraAvailable(suggestion: BoxExtraSuggestion) {
+    setError(null);
+    setTogglingExtraId(suggestion.id);
+    const { error: updateError } = await supabase
+      .from("box_extra_suggestions")
+      .update({ is_available: !suggestion.is_available })
+      .eq("id", suggestion.id);
+    setTogglingExtraId(null);
+    if (updateError) return setError(updateError.message);
+    setBoxExtraSuggestions((prev) => prev.map((s) => (s.id === suggestion.id ? { ...s, is_available: !s.is_available } : s)));
+  }
+
+  async function deleteExtraSuggestion(suggestion: BoxExtraSuggestion) {
+    setError(null);
+    setDeletingExtraId(suggestion.id);
+    const { error: deleteError } = await supabase.from("box_extra_suggestions").delete().eq("id", suggestion.id);
+    setDeletingExtraId(null);
+    if (deleteError) return setError(deleteError.message);
+    setBoxExtraSuggestions((prev) => prev.filter((s) => s.id !== suggestion.id));
+  }
 
   async function toggleChoiceOptionAvailable(option: ComboChoiceOption) {
     setError(null);
@@ -533,6 +767,18 @@ export function MenuManagement() {
                 </button>
               </div>
               <button
+                className="btn-sm btn-primary"
+                disabled={togglingBuildableCategoryId === category.id}
+                title="القسم ده يظهر في شاشة (اصنع وجبتك بنفسك) ولا لأ"
+                onClick={() => toggleBuildableCategory(category)}
+              >
+                {togglingBuildableCategoryId === category.id
+                  ? "جاري التحديث..."
+                  : category.is_buildable_box
+                    ? "قسم قابل للتركيب ✓"
+                    : "اجعله قابل للتركيب"}
+              </button>
+              <button
                 className="btn-danger btn-sm"
                 disabled={deletingCategoryId === category.id}
                 onClick={() => deleteCategory(category)}
@@ -643,6 +889,210 @@ export function MenuManagement() {
           </div>
         );
       })}
+
+      <div className="card">
+        <h2>اصنع وجبتك بنفسك</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          لكل قسم متعلّم "قابل للتركيب" فوق: عرّف أحجام العلبة (السعر والسعة بالجرام)، والمنتجات اللي ممكن تتحط
+          جوه العلبة مجانًا لحد ما تخلص السعة (المكوّنات)، والمنتجات اللي بتتضاف بسعرها لوحدها كإضافة (زي فراخ
+          زيادة أو موتزريلا).
+        </p>
+        {categories.filter((c) => c.is_buildable_box).length === 0 && (
+          <p className="muted">مفيش قسم متعلّم "قابل للتركيب" لسه - علّم قسم من فوق الأول (زي الكشري أو الطواجن).</p>
+        )}
+        {categories
+          .filter((c) => c.is_buildable_box)
+          .map((category) => {
+            const sizes = boxSizesByCategory.get(category.id) ?? [];
+            const fills = boxFillComponentsByCategory.get(category.id) ?? [];
+            const extras = boxExtraSuggestionsByCategory.get(category.id) ?? [];
+            const sizeDraft = newBoxSizeDrafts[category.id] ?? { name: "", price: "", capacity_grams: "" };
+            const fillDraft = newFillDrafts[category.id] ?? { menu_item_id: "", grams_per_unit: "" };
+            const extraDraft = newExtraDrafts[category.id] ?? "";
+            return (
+              <div key={category.id} className="card" style={{ background: "var(--bg)" }}>
+                <h3>{category.name}</h3>
+
+                <p className="muted" style={{ marginBottom: 4 }}>أحجام العلبة</p>
+                {sizes.length === 0 && <p className="muted">مفيش أحجام لسه.</p>}
+                <div className="order-list">
+                  {sizes.map((size) => (
+                    <div key={size.id} className="pending-order-card card">
+                      <div className="pending-order-header">
+                        <strong>{size.name}</strong>
+                        {!size.is_available && <span className="muted">موقوف</span>}
+                      </div>
+                      <p className="muted">{size.price} ج - سعة {size.capacity_grams} جرام</p>
+                      <div className="actions-cell">
+                        <button
+                          className="btn-sm btn-primary"
+                          disabled={togglingBoxSizeId === size.id}
+                          onClick={() => toggleBoxSizeAvailable(size)}
+                        >
+                          {togglingBoxSizeId === size.id ? "جاري التحديث..." : size.is_available ? "إيقاف" : "تفعيل"}
+                        </button>
+                        <button
+                          className="btn-danger btn-sm"
+                          disabled={deletingBoxSizeId === size.id}
+                          onClick={() => deleteBoxSize(size)}
+                        >
+                          {deletingBoxSizeId === size.id ? "جاري الحذف..." : "حذف"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="inline-row" style={{ marginTop: 8 }}>
+                  <input
+                    placeholder="اسم الحجم (صغيرة/وسط/كبيرة)"
+                    value={sizeDraft.name}
+                    onChange={(e) => setNewBoxSizeDrafts((prev) => ({ ...prev, [category.id]: { ...sizeDraft, name: e.target.value } }))}
+                  />
+                  <input
+                    placeholder="السعر"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    style={{ width: "90px" }}
+                    value={sizeDraft.price}
+                    onChange={(e) => setNewBoxSizeDrafts((prev) => ({ ...prev, [category.id]: { ...sizeDraft, price: e.target.value } }))}
+                  />
+                  <input
+                    placeholder="السعة بالجرام"
+                    type="number"
+                    min="0"
+                    step="1"
+                    style={{ width: "110px" }}
+                    value={sizeDraft.capacity_grams}
+                    onChange={(e) => setNewBoxSizeDrafts((prev) => ({ ...prev, [category.id]: { ...sizeDraft, capacity_grams: e.target.value } }))}
+                  />
+                  <button
+                    className="btn-sm btn-primary"
+                    disabled={creatingBoxSizeCategoryId === category.id}
+                    onClick={() => createBoxSize(category.id)}
+                  >
+                    {creatingBoxSizeCategoryId === category.id ? "جاري الإضافة..." : "+ إضافة حجم"}
+                  </button>
+                </div>
+
+                <p className="muted" style={{ marginTop: 16, marginBottom: 4 }}>المكوّنات (مجانية جوه السعة)</p>
+                {fills.length === 0 && <p className="muted">مفيش مكوّنات لسه.</p>}
+                <div className="status-pill-row">
+                  {fills.map((component) => (
+                    <button
+                      key={component.id}
+                      type="button"
+                      className={`status-pill${component.is_available ? "" : " status-pill-danger"}`}
+                      disabled={togglingFillId === component.id}
+                      title="اضغط لإيقاف/تفعيل"
+                      onClick={() => toggleFillAvailable(component)}
+                    >
+                      {itemNameById.get(component.menu_item_id) ?? `منتج #${component.menu_item_id}`} - {component.grams_per_unit}ج
+                      {!component.is_available && " (موقوف)"}
+                    </button>
+                  ))}
+                </div>
+                <div className="inline-row" style={{ marginTop: 8 }}>
+                  <select
+                    value={fillDraft.menu_item_id}
+                    onChange={(e) => setNewFillDrafts((prev) => ({ ...prev, [category.id]: { ...fillDraft, menu_item_id: e.target.value } }))}
+                  >
+                    <option value="">-- اختار منتج --</option>
+                    {items.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    placeholder="جرام للوحدة"
+                    type="number"
+                    min="0"
+                    step="1"
+                    style={{ width: "110px" }}
+                    value={fillDraft.grams_per_unit}
+                    onChange={(e) => setNewFillDrafts((prev) => ({ ...prev, [category.id]: { ...fillDraft, grams_per_unit: e.target.value } }))}
+                  />
+                  <button
+                    className="btn-sm btn-primary"
+                    disabled={creatingFillCategoryId === category.id}
+                    onClick={() => createFillComponent(category.id)}
+                  >
+                    {creatingFillCategoryId === category.id ? "جاري الإضافة..." : "+ إضافة مكوّن"}
+                  </button>
+                </div>
+                {fills.length > 0 && (
+                  <div className="inline-row" style={{ marginTop: 4 }}>
+                    {fills.map((component) => (
+                      <button
+                        key={component.id}
+                        className="btn-link"
+                        style={{ fontSize: "0.8rem" }}
+                        disabled={deletingFillId === component.id}
+                        onClick={() => deleteFillComponent(component)}
+                      >
+                        حذف "{itemNameById.get(component.menu_item_id) ?? component.menu_item_id}"
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <p className="muted" style={{ marginTop: 16, marginBottom: 4 }}>الإضافات المدفوعة</p>
+                {extras.length === 0 && <p className="muted">مفيش إضافات لسه.</p>}
+                <div className="status-pill-row">
+                  {extras.map((suggestion) => (
+                    <button
+                      key={suggestion.id}
+                      type="button"
+                      className={`status-pill${suggestion.is_available ? "" : " status-pill-danger"}`}
+                      disabled={togglingExtraId === suggestion.id}
+                      title="اضغط لإيقاف/تفعيل"
+                      onClick={() => toggleExtraAvailable(suggestion)}
+                    >
+                      {itemNameById.get(suggestion.menu_item_id) ?? `منتج #${suggestion.menu_item_id}`}
+                      {!suggestion.is_available && " (موقوف)"}
+                    </button>
+                  ))}
+                </div>
+                <div className="inline-row" style={{ marginTop: 8 }}>
+                  <select
+                    value={extraDraft}
+                    onChange={(e) => setNewExtraDrafts((prev) => ({ ...prev, [category.id]: e.target.value }))}
+                  >
+                    <option value="">-- اختار منتج --</option>
+                    {items.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} ({item.price} ج)
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="btn-sm btn-primary"
+                    disabled={creatingExtraCategoryId === category.id}
+                    onClick={() => createExtraSuggestion(category.id)}
+                  >
+                    {creatingExtraCategoryId === category.id ? "جاري الإضافة..." : "+ إضافة"}
+                  </button>
+                </div>
+                {extras.length > 0 && (
+                  <div className="inline-row" style={{ marginTop: 4 }}>
+                    {extras.map((suggestion) => (
+                      <button
+                        key={suggestion.id}
+                        className="btn-link"
+                        style={{ fontSize: "0.8rem" }}
+                        disabled={deletingExtraId === suggestion.id}
+                        onClick={() => deleteExtraSuggestion(suggestion)}
+                      >
+                        حذف "{itemNameById.get(suggestion.menu_item_id) ?? suggestion.menu_item_id}"
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+      </div>
 
       <div className="card">
         <h2>{comboSectionLabel}</h2>

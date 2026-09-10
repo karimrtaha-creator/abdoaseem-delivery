@@ -12,6 +12,12 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 interface CartItem {
   menu_item_id?: number;
   combo_offer_id?: number;
+  // "اصنع وجبتك بنفسك" box builder (2026-09-10) - box_size_id names the
+  // chosen box_sizes row; fills/extras are the customer's picks, always
+  // re-priced and re-weighed server-side below, never trusted as sent.
+  box_size_id?: number;
+  fills?: { menu_item_id: number; quantity: number }[];
+  extras?: { menu_item_id: number; quantity: number }[];
   quantity: number;
   combo_choice_option_ids?: number[];
   note?: string;
@@ -88,22 +94,54 @@ async function finishOrder(
     voucherCode?: string | null;
   },
 ): Promise<Response> {
-  const menuItemIds = args.items.filter((i) => i.menu_item_id != null).map((i) => i.menu_item_id as number);
+  const boxItems = args.items.filter((i) => i.box_size_id != null);
+  const boxSizeIds = boxItems.map((i) => i.box_size_id as number);
+
+  // Box fills/extras reference real menu_items too - folded into the same
+  // menuItemIds re-fetch as plain lines so every id in this order gets the
+  // same "never trust the client" price/availability re-check in one query.
+  const menuItemIds = [
+    ...args.items.filter((i) => i.menu_item_id != null).map((i) => i.menu_item_id as number),
+    ...boxItems.flatMap((i) => (i.fills ?? []).map((f) => f.menu_item_id)),
+    ...boxItems.flatMap((i) => (i.extras ?? []).map((e) => e.menu_item_id)),
+  ];
   const comboIds = args.items.filter((i) => i.combo_offer_id != null).map((i) => i.combo_offer_id as number);
 
-  const [menuItemsRes, combosRes] = await Promise.all([
+  const [menuItemsRes, combosRes, boxSizesRes] = await Promise.all([
     menuItemIds.length
-      ? admin.from("menu_items").select("id, price, is_available").in("id", menuItemIds)
+      ? admin.from("menu_items").select("id, name, price, is_available").in("id", menuItemIds)
       : Promise.resolve({ data: [], error: null }),
     comboIds.length
       ? admin.from("combo_offers").select("id, price, is_active").in("id", comboIds)
       : Promise.resolve({ data: [], error: null }),
+    boxSizeIds.length
+      ? admin.from("box_sizes").select("id, category_id, price, capacity_grams, is_available").in("id", boxSizeIds)
+      : Promise.resolve({ data: [], error: null }),
   ]);
   if (menuItemsRes.error) return dbErrorResponse("create-order", menuItemsRes.error.message);
   if (combosRes.error) return dbErrorResponse("create-order", combosRes.error.message);
+  if (boxSizesRes.error) return dbErrorResponse("create-order", boxSizesRes.error.message);
 
   const menuItemPrices = new Map((menuItemsRes.data ?? []).map((m) => [m.id, m]));
   const comboPrices = new Map((combosRes.data ?? []).map((c) => [c.id, c]));
+  const boxSizes = new Map((boxSizesRes.data ?? []).map((b) => [b.id, b]));
+
+  // Fill components are scoped per category (a box's category_id), fetched
+  // for every distinct category actually referenced by a box in this order.
+  const boxCategoryIds = [...new Set([...boxSizes.values()].map((b) => b.category_id))];
+  const { data: fillComponentsData, error: fillComponentsError } = boxCategoryIds.length
+    ? await admin
+        .from("box_fill_components")
+        .select("category_id, menu_item_id, grams_per_unit, is_available")
+        .in("category_id", boxCategoryIds)
+    : { data: [], error: null };
+  if (fillComponentsError) return dbErrorResponse("create-order", fillComponentsError.message);
+  const fillComponentsByCategory = new Map<number, Map<number, { grams_per_unit: number; is_available: boolean }>>();
+  for (const row of fillComponentsData ?? []) {
+    const map = fillComponentsByCategory.get(row.category_id) ?? new Map();
+    map.set(row.menu_item_id, { grams_per_unit: row.grams_per_unit, is_available: row.is_available });
+    fillComponentsByCategory.set(row.category_id, map);
+  }
 
   // Combo choices are re-resolved server-side the same way prices are -
   // the client sends option ids, never the label text, and this fetches
@@ -131,6 +169,7 @@ async function finishOrder(
   const orderItemsToInsert: {
     menu_item_id: number | null;
     combo_offer_id: number | null;
+    box_size_id: number | null;
     quantity: number;
     unit_price: number;
     combo_selection: string | null;
@@ -149,9 +188,63 @@ async function finishOrder(
       orderItemsToInsert.push({
         menu_item_id: item.menu_item_id,
         combo_offer_id: null,
+        box_size_id: null,
         quantity: item.quantity,
         unit_price: found.price,
         combo_selection: null,
+        note,
+      });
+    } else if (item.box_size_id != null) {
+      // "اصنع وجبتك بنفسك" box line - the only order-item kind where the
+      // client's own composition (which items, how much) is trusted for
+      // WHAT was picked but never for grams/pricing: both are recomputed
+      // here from box_sizes/box_fill_components/menu_items, same "never
+      // trust the client" rule as every other item kind above.
+      const box = boxSizes.get(item.box_size_id);
+      if (!box) return errorResponse(`box_size_id ${item.box_size_id} not found`, 422);
+      if (!box.is_available) return errorResponse(`box_size_id ${item.box_size_id} is not available`, 422);
+
+      const components = fillComponentsByCategory.get(box.category_id) ?? new Map();
+      let totalGrams = 0;
+      const fillParts: string[] = [];
+      for (const fill of item.fills ?? []) {
+        const component = components.get(fill.menu_item_id);
+        if (!component || !component.is_available) {
+          return errorResponse(`menu_item_id ${fill.menu_item_id} is not a valid fill for box_size_id ${item.box_size_id}`, 422);
+        }
+        const menuItem = menuItemPrices.get(fill.menu_item_id);
+        if (!menuItem || !menuItem.is_available) {
+          return errorResponse(`menu_item_id ${fill.menu_item_id} is not available`, 422);
+        }
+        totalGrams += component.grams_per_unit * fill.quantity;
+        fillParts.push(`${menuItem.name} ${component.grams_per_unit * fill.quantity}ج`);
+      }
+      if (totalGrams > box.capacity_grams) {
+        return errorResponse(`box_size_id ${item.box_size_id}: fills exceed the box's capacity (${box.capacity_grams} جرام)`, 422);
+      }
+
+      let extrasTotal = 0;
+      const extraParts: string[] = [];
+      for (const extra of item.extras ?? []) {
+        const menuItem = menuItemPrices.get(extra.menu_item_id);
+        if (!menuItem || !menuItem.is_available) {
+          return errorResponse(`menu_item_id ${extra.menu_item_id} is not available`, 422);
+        }
+        extrasTotal += menuItem.price * extra.quantity;
+        extraParts.push(extra.quantity > 1 ? `${menuItem.name} ×${extra.quantity}` : menuItem.name);
+      }
+
+      const descriptionParts: string[] = [];
+      if (fillParts.length) descriptionParts.push(fillParts.join("، "));
+      if (extraParts.length) descriptionParts.push(`إضافات: ${extraParts.join("، ")}`);
+
+      orderItemsToInsert.push({
+        menu_item_id: null,
+        combo_offer_id: null,
+        box_size_id: item.box_size_id,
+        quantity: item.quantity,
+        unit_price: box.price + extrasTotal,
+        combo_selection: descriptionParts.length ? descriptionParts.join(" | ") : null,
         note,
       });
     } else {
@@ -186,6 +279,7 @@ async function finishOrder(
       orderItemsToInsert.push({
         menu_item_id: null,
         combo_offer_id: item.combo_offer_id as number,
+        box_size_id: null,
         quantity: item.quantity,
         unit_price: found.price,
         combo_selection: comboSelection,
@@ -246,6 +340,7 @@ async function finishOrder(
     p_items: orderItemsToInsert.map((i) => ({
       menu_item_id: i.menu_item_id,
       combo_offer_id: i.combo_offer_id,
+      box_size_id: i.box_size_id,
       quantity: i.quantity,
       unit_price: i.unit_price,
       combo_selection: i.combo_selection,
@@ -304,11 +399,30 @@ serveWithCors(async (req) => {
   if (paymentMethod === "instapay_transfer" && !body.payment_proof_url) {
     return errorResponse("payment_proof_url is required when payment_method is instapay_transfer");
   }
+  function isValidQuantityList(list: unknown): boolean {
+    return (
+      Array.isArray(list) &&
+      list.every(
+        (e) =>
+          e && typeof e === "object" &&
+          typeof (e as { menu_item_id?: unknown }).menu_item_id === "number" &&
+          typeof (e as { quantity?: unknown }).quantity === "number" &&
+          Number.isInteger((e as { quantity: number }).quantity) &&
+          (e as { quantity: number }).quantity >= 1 &&
+          (e as { quantity: number }).quantity <= MAX_ITEM_QUANTITY,
+      )
+    );
+  }
+
   for (const item of items) {
     const hasMenuItem = item.menu_item_id != null;
     const hasCombo = item.combo_offer_id != null;
-    if (hasMenuItem === hasCombo) {
-      return errorResponse("each item must have exactly one of menu_item_id or combo_offer_id");
+    const hasBox = item.box_size_id != null;
+    if ([hasMenuItem, hasCombo, hasBox].filter(Boolean).length !== 1) {
+      return errorResponse("each item must have exactly one of menu_item_id, combo_offer_id, or box_size_id");
+    }
+    if (hasBox && (!isValidQuantityList(item.fills ?? []) || !isValidQuantityList(item.extras ?? []))) {
+      return errorResponse(`box fills/extras must be a list of { menu_item_id, quantity } with quantity between 1 and ${MAX_ITEM_QUANTITY}`);
     }
     if (
       typeof item.quantity !== "number" ||
